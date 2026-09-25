@@ -70,6 +70,17 @@ export function formatINR(p: Paise, symbol = '₹'): string {
   return `${neg ? '−' : ''}${symbol}${groupIndian(String(rupees))}.${paise}`;
 }
 
+/** Display-only short form for chart axes: ₹950, ₹12.5K, ₹3.2L, ₹1.1Cr. */
+export function formatCompactINR(p: Paise, symbol = '₹'): string {
+  const r = Math.abs(p) / 100;
+  const sign = p < 0 ? '−' : '';
+  const fmt = (n: number, unit: string) => `${sign}${symbol}${(Math.round(n * 10) / 10).toString()}${unit}`;
+  if (r >= 1e7) return fmt(r / 1e7, 'Cr');
+  if (r >= 1e5) return fmt(r / 1e5, 'L');
+  if (r >= 1e3) return fmt(r / 1e3, 'K');
+  return `${sign}${symbol}${Math.round(r)}`;
+}
+
 /** Paise → plain decimal string for inputs / CSV ("1234.50"). */
 export function paiseToDecimal(p: Paise): string {
   const neg = p < 0;

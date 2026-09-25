@@ -209,12 +209,46 @@ export async function listBillsPage(
   return { bills, next: cursor && last ? { createdAt: last.createdAt, billNo: last.billNo } : undefined };
 }
 
-/** Stream every bill in [start, end) oldest-first without loading them all into memory. */
+const BATCH = 1000;
+
+/**
+ * Stream every bill in [start, end) oldest-first, in batches of 1000 via
+ * index.getAll (far faster than a cursor step per bill), so 50k+ bills are
+ * scanned quickly without loading them all into memory at once.
+ * Bills sharing a timestamp across a batch boundary are de-duplicated.
+ */
 export async function forEachBill(range: { start: number; end: number }, fn: (b: Bill) => void): Promise<void> {
+  if (range.end <= range.start) return;
   const db = await getDB();
-  let cursor = await db.transaction('bills').store.index('createdAt').openCursor(IDBKeyRange.bound(range.start, range.end, false, true));
-  while (cursor) {
-    fn(cursor.value);
-    cursor = await cursor.continue();
+  let lower = range.start;
+  const seenAtLower = new Set<string>();
+  for (;;) {
+    const index = db.transaction('bills').store.index('createdAt');
+    const batch = await index.getAll(IDBKeyRange.bound(lower, range.end, false, true), BATCH);
+    let fresh = 0;
+    for (const b of batch) {
+      if (b.createdAt === lower && seenAtLower.has(b.billNo)) continue;
+      fn(b);
+      fresh++;
+    }
+    if (batch.length < BATCH) return;
+    const last = batch[batch.length - 1]!.createdAt;
+    if (last !== lower) {
+      seenAtLower.clear();
+      lower = last;
+    }
+    for (const b of batch) if (b.createdAt === last) seenAtLower.add(b.billNo);
+    if (fresh === 0) {
+      // Over 1000 bills share one millisecond: finish that key with a cursor, then move past it.
+      let cursor = await db.transaction('bills').store.index('createdAt').openCursor(IDBKeyRange.only(lower));
+      while (cursor) {
+        if (!seenAtLower.has(cursor.value.billNo)) fn(cursor.value);
+        cursor = await cursor.continue();
+      }
+      const next = await db.transaction('bills').store.index('createdAt').getAll(IDBKeyRange.bound(lower, range.end, true, true), 1);
+      if (!next.length) return;
+      lower = next[0]!.createdAt;
+      seenAtLower.clear();
+    }
   }
 }
