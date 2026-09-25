@@ -9,6 +9,7 @@ import { $ } from './ui/dom';
 import { renderNav } from './ui/components/nav';
 import { showBackupReminder } from './ui/components/backupBanner';
 import { startRouter } from './router';
+import { registerServiceWorker } from './pwa';
 
 const setActive = renderNav($('#nav'));
 startRouter($('#view'), setActive);
@@ -23,3 +24,4 @@ void (async () => {
 })();
 
 void showBackupReminder($('#banner-slot'));
+registerServiceWorker();
