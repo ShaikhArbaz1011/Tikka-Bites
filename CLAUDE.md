@@ -20,7 +20,8 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 
 ## Money
 - Store money **only** as integer paise, and percentages as integer basis points (1% = 100).
-- Never use floats for money math. Use the helpers in `src/core/money.ts` and `src/core/tax.ts`.
+- Never use floats for money math. Use the helpers in `src/core/money.ts` and `src/core/totals.ts`.
+- **No tax / GST anywhere** (local business): total = subtotal − discount (+ round-off). Don't add GST fields back.
 - `formatINR()` is the only place that converts paise to a ₹ string, and only for display.
 - Bills store snapshots (item name, price, cheesy line). Never recompute an old bill from the current menu.
 

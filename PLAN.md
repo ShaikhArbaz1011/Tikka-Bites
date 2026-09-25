@@ -3,7 +3,10 @@
 A single-page, offline-first restaurant billing app. No login, no server, no paid
 services. All data lives in the browser (IndexedDB). Deploys free on Netlify or Vercel.
 
-> Status: **DRAFT — awaiting approval.** No code is written until this plan is approved.
+> Status: **APPROVED** (defaults accepted).
+>
+> **Change from plan.txt:** no tax / GST at all. This is a local business, so bills show
+> subtotal − discount (+ round-off) = total. There is no GST %, no CGST/SGST, and no GSTIN.
 
 ---
 
@@ -39,7 +42,7 @@ layout CSS change; the logic stays the same.
 │     ▼               ▼              ▼               ▼             │
 │  ui/billing      ui/menu       ui/settings    ui/reports (lazy)  │
 │     │               │              │               │             │
-│     └──────► core/ (pure functions: money, tax, billNo,          │
+│     └──────► core/ (pure functions: money, totals, billNo,         │
 │               shuffleBag, topK, validate, csv, dates)            │
 │                     │                                            │
 │                     ▼                                            │
@@ -121,8 +124,7 @@ Indexes: `category`, `active`.
   customerName?: string,
   paymentMode: 'cash' | 'upi' | 'card',
   discount: { kind: 'flat', paise } | { kind: 'pct', bp },
-  subtotalPaise, discountPaise, taxablePaise,
-  gstBp, cgstPaise, sgstPaise,
+  subtotalPaise, discountPaise,
   roundOffPaise,              // see Open Question 2
   totalPaise,
   itemCount: number,
@@ -146,7 +148,7 @@ Indexes: `createdAt`, `monthKey`, `status`, `totalPaise`.
 ```ts
 {
   monthKey, billCount, voidCount,
-  revenuePaise, taxPaise, discountPaise, itemsSold,
+  revenuePaise, discountPaise, itemsSold,
   byPayment:   { cash: {count, paise}, upi: {...}, card: {...} },
   byOrderType: { 'dine-in': {...}, takeaway: {...}, delivery: {...} },
   byCategory:  { [category]: { qty, paise } },
@@ -160,7 +162,7 @@ Indexes: `createdAt`, `monthKey`, `status`, `totalPaise`.
 ### Store `settings` (single record, key `"app"`)
 
 ```ts
-{ name, address, phone, gstin, logoDataUrl?, gstBp, currencySymbol,
+{ name, address, phone, logoDataUrl?, currencySymbol,
   receiptWidth: '58' | '80' | 'A4', roundOff: boolean, lastBackupAt?: number }
 ```
 
@@ -201,17 +203,15 @@ naturally, because a new `monthKey` starts at 0.
 
 ---
 
-## 4. Money, tax and discount math (`core/money.ts`, `core/tax.ts`)
+## 4. Money and discount math (`core/money.ts`, `core/totals.ts`)
 
 1. `subtotal = Σ unitPaise × qty` (integers).
 2. Discount:
    - Flat: `discountPaise = min(flat, subtotal)`.
    - Percent: `discountPaise = roundHalfUp(subtotal × bp / 10000)`, where `bp` is at most 10000.
-3. `taxable = subtotal − discount`.
-4. `totalTax = roundHalfUp(taxable × gstBp / 10000)`.
-5. `cgst = floor(totalTax / 2)` and `sgst = totalTax − cgst`, so the two halves always add up exactly.
-6. `total = taxable + totalTax (+ roundOff)`.
-7. `formatINR(paise)` is the **only** place paise become `₹1,23,456.78` (Indian digit grouping).
+3. `total = subtotal − discount (+ roundOff)`. Round-off goes to the nearest rupee, half-up, and can be toggled in Settings.
+4. No tax is charged (local business).
+5. `formatINR(paise)` is the **only** place paise become `₹1,23,456.78` (Indian digit grouping).
    It is used for display only.
 
 `roundHalfUp` uses integer arithmetic only, so there is no `0.1 + 0.2` float drift.
@@ -235,7 +235,6 @@ naturally, because a new `monthKey` starts at 0.
 **Order details**
 - Order type segmented control: Dine-in shows a Table no. field. Takeaway and Delivery do not.
 - Discount toggle: ₹ or %, with its own input.
-- The GST % comes from settings, and CGST and SGST are shown separately.
 - Payment: Cash / UPI / Card. Customer name is optional.
 
 **Totals and saving**
@@ -277,9 +276,9 @@ naturally, because a new `monthKey` starts at 0.
 The receipt is rendered with DOM APIs into `#print-root`.
 
 **Receipt contents**
-- Logo, name, address, phone, GSTIN, bill no, date/time, order type/table
+- Logo, name, address, phone, bill no, date/time, order type/table
 - Items table
-- Subtotal, discount, CGST, SGST, round-off, **Grand total**
+- Subtotal, discount, round-off, **Grand total**
 - Payment mode
 - The cheesy line
 
@@ -343,7 +342,7 @@ The receipt is rendered with DOM APIs into `#print-root`.
   category. Dish and category charts then count only the items from that category.
 
 **KPIs**
-- Revenue, bill count, average bill, items sold, tax collected, discounts given.
+- Revenue, bill count, average bill, items sold, discounts given.
 - Voided bills are excluded, and the voided count is shown separately.
 
 **Top 10 dishes**
@@ -377,8 +376,7 @@ The receipt is rendered with DOM APIs into `#print-root`.
 ### 5.6 Settings and data safety (`#/settings`)
 
 **Settings fields**
-- Restaurant name, address, phone, GSTIN (15 chars, format-checked), logo.
-- GST % (0–28, two decimals).
+- Restaurant name, address, phone, logo.
 - Currency symbol (≤ 3 chars, default ₹).
 - Receipt width.
 - Round-off toggle.
@@ -491,7 +489,7 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 │  ├─ router.ts
 │  ├─ sw.ts
 │  ├─ styles/  tokens.css  base.css  layout.css  components.css  print.css
-│  ├─ core/    money.ts tax.ts billNo.ts shuffleBag.ts topK.ts dates.ts
+│  ├─ core/    money.ts totals.ts billNo.ts shuffleBag.ts topK.ts dates.ts
 │  │           csv.ts validate.ts image.ts debounce.ts
 │  ├─ db/      db.ts (open + upgrade) types.ts menuRepo.ts billRepo.ts
 │  │           statsRepo.ts settingsRepo.ts linesRepo.ts backup.ts
@@ -506,7 +504,7 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 │     └─ reports/     (lazy) reportsView.ts filters.ts query.ts kpis.ts
 │                     charts.ts billList.ts exportCsv.ts
 └─ tests/
-   ├─ unit/  money, tax, billNo, stats(aggregation), topK, shuffleBag,
+   ├─ unit/  money, totals, billNo, stats(aggregation), topK, shuffleBag,
    │         validate(import), csv, noInnerHTML
    └─ e2e/   flow.spec.ts  screenshots.spec.ts
 ```
@@ -518,10 +516,10 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 | # | Phase | Output | Checks |
 |---|---|---|---|
 | 0 | **Scaffold** | `git init`, Vite + TS strict, folders, CLAUDE.md, header configs, app shell (nav + router + empty screens), size-check script | build passes, screenshots 375/1280 |
-| 1 | **Core logic** | money, tax, discount, billNo, shuffle bag, top-K, validators, CSV | Vitest green |
+| 1 | **Core logic** | money, totals, discount, billNo, shuffle bag, top-K, validators, CSV | Vitest green |
 | 2 | **Database** | schema, repos, `saveBill` / `voidBill` transactions, `monthlyStats` updates | Vitest + fake-indexeddb, including a concurrent-save no-duplicate test |
 | 3 | **Menu management** | CRUD, soft delete, search, sample menu | screenshots + console clean |
-| 4 | **Billing** | grid, cart, order type, discount, GST, payment, shortcuts, draft autosave | screenshots + console clean |
+| 4 | **Billing** | grid, cart, order type, discount, payment, shortcuts, draft autosave | screenshots + console clean |
 | 5 | **Receipt & print** | 58/80/A4 print CSS, preview, WhatsApp, reprint, logo | print-emulation screenshots |
 | 6 | **Settings & data safety** | details, logo upload, lines editor, backup/restore + validation, persist, reminder banner | Vitest (import validation) + screenshots |
 | 7 | **Reports (lazy)** | filters, KPIs, SVG charts, top/least-sold, MoM, void, pagination, CSV | screenshots + aggregation tests |
@@ -535,10 +533,9 @@ console errors. Then I'll review the images myself. It is the same check, with a
 
 ---
 
-## 11. Open questions (defaults in **bold** — I'll use them unless you say otherwise)
+## 11. Decisions (all defaults accepted)
 
-1. **Are menu prices GST-exclusive?** Default: **yes, GST is added on top**. Most Indian
-   restaurants print it this way.
+1. ~~GST~~ **Removed:** no tax or GST (local business).
 2. **Round the grand total to the nearest rupee?** Default: **yes, with a "Round off"
    line, toggleable in Settings.**
 3. **Offer a sample menu on first run?** Default: **yes, optional button.**
