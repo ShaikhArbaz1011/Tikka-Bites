@@ -37,18 +37,18 @@ Keyboard shortcuts on the Billing screen:
 ## Deploy for free on GitHub Pages (about 5 minutes)
 
 You only need a free [GitHub](https://github.com) account. The app will live at
-`https://<your-username>.github.io/tikka-bites/`.
+`https://shaikharbaz1011.github.io/Tikka-Bites/`.
 
 ### 1. Create an empty repository on GitHub
 
-On github.com, click **+ → New repository** and name it `tikka-bites`. Leave it **empty**:
+On github.com, click **+ → New repository** and name it `Tikka-Bites`. Leave it **empty**:
 don't add a README, .gitignore or licence. Then click **Create repository**.
 
 ### 2. Push the code (run these in the project folder)
 
 ```powershell
 cd "G:\Billing system"
-git remote add origin https://github.com/<your-username>/tikka-bites.git
+git remote add origin https://github.com/ShaikhArbaz1011/Tikka-Bites.git
 git push -u origin main
 ```
 
@@ -63,7 +63,7 @@ Then open the **Actions** tab. The **Deploy to GitHub Pages** workflow runs the 
 the app and publishes it, which takes about 1–2 minutes. If it ran before Pages was switched on
 and failed, click it and choose **Re-run all jobs**.
 
-Your app is now live at `https://<your-username>.github.io/tikka-bites/`.
+Your app is now live at `https://shaikharbaz1011.github.io/Tikka-Bites/`.
 
 ### Updating the live app later
 
@@ -82,8 +82,8 @@ The same repository also deploys to Netlify or Vercel. Import it there; the sett
 from `netlify.toml` / `vercel.json`. Those hosts also send extra security headers that GitHub Pages
 can't (for example, blocking the app from being embedded in other sites).
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/<your-username>/tikka-bites)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/<your-username>/tikka-bites)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/ShaikhArbaz1011/Tikka-Bites)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/ShaikhArbaz1011/Tikka-Bites)
 
 ### Install it on the billing device
 
