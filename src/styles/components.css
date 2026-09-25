@@ -119,3 +119,37 @@ textarea.input { padding: 10px 12px; min-height: 88px; resize: vertical; }
   .modal-actions { padding: 12px 16px 16px; }
   .modal-body { padding: 12px 16px 16px; }
 }
+
+/* File inputs are visually hidden; show focus on their label button */
+input[type='file'].visually-hidden:focus-visible + .btn { outline: 3px solid var(--focus); outline-offset: 2px; }
+label.btn { cursor: pointer; }
+
+/* Backup reminder banner */
+.banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 8px 10px 16px;
+  border: 1px solid #f5c79f; border-radius: var(--radius); background: var(--accent-soft); color: var(--text);
+}
+.banner > .icon { color: var(--accent-strong); flex: none; }
+.banner-text { flex: 1 1 220px; }
+
+/* Settings */
+.settings { display: grid; gap: var(--gap); max-width: 880px; }
+.settings-card { padding: 20px; display: grid; gap: 12px; }
+.section-title { font-size: 18px; }
+.section-desc { margin-top: -6px; }
+@media (min-width: 640px) {
+  .settings-grid { grid-template-columns: 1fr 1fr; }
+  .span-2 { grid-column: span 2; }
+}
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.logo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.logo-box { display: grid; place-items: center; width: 120px; height: 120px; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface-2); overflow: hidden; }
+.logo-img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.inline-form { display: flex; gap: 8px; }
+.inline-form .input { flex: 1; min-width: 0; }
+.lines-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; max-height: 420px; overflow: auto; }
+.line-row { display: flex; align-items: center; gap: 8px; }
+.line-row .line-text { flex: 1; min-width: 0; }
+.line-row.is-disabled .line-text { opacity: 0.55; }
+.tag { flex: none; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 12px; font-weight: 600; }
+@media (max-width: 480px) { .line-row .tag { display: none; } }

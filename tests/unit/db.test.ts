@@ -147,7 +147,7 @@ describe('monthly stats (pre-aggregation) and void', () => {
     expect(after!.voidCount).toBe(1);
     expect(after!.revenuePaise).toBe(before!.revenuePaise - b.totalPaise);
     expect(after!.revenuePaise).toBe(a.totalPaise);
-    expect(after!.byDish[String(naan)]!.qty).toBe(0);
+    expect(after!.byDish[String(naan)]).toBeUndefined(); // pruned, as if never added
     expect((await getBill(b.billNo))!.status).toBe('void');
   });
 
@@ -171,7 +171,7 @@ describe('monthly stats (pre-aggregation) and void', () => {
     applyBill(s, structuredClone(bill) as never, -1);
     expect(s.billCount).toBe(0);
     expect(s.revenuePaise).toBe(0);
-    expect(s.byCategory['A']).toEqual({ qty: 0, paise: 0 });
+    expect(s).toEqual(emptyStats());
   });
 });
 

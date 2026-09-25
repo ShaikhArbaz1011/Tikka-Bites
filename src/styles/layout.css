@@ -52,3 +52,7 @@
 
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: var(--gap); }
 .page-title { font-size: 22px; font-weight: 800; }
+.content { min-width: 0; }
+.banner-slot:empty { display: none; }
+.banner-slot { padding: var(--gap) var(--gap) 0; }
+@media (min-width: 640px) { .banner-slot { padding: calc(var(--gap) * 1.5) calc(var(--gap) * 1.5) 0; } }

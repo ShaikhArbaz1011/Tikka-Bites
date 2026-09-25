@@ -28,6 +28,13 @@ function bump(map: Record<string, CountPaise>, key: string, sign: number, paise:
   const e = (map[key] ??= { count: 0, paise: 0 });
   e.count += sign;
   e.paise += sign * paise;
+  if (e.count === 0 && e.paise === 0) delete map[key];
+}
+
+/** Removing a bill must leave stats identical to never having added it. */
+function pruneQty(map: Record<string, { qty: number; paise: number }>, key: string): void {
+  const e = map[key];
+  if (e && e.qty === 0 && e.paise === 0) delete map[key];
 }
 
 /**
@@ -52,6 +59,7 @@ export function applyBill(s: Stats, bill: Bill, sign: 1 | -1, itemFilter?: (i: B
   wd.paise += sign * total;
   const day = String(new Date(bill.createdAt).getDate());
   s.byDay[day] = (s.byDay[day] ?? 0) + sign * total;
+  if (sign < 0 && s.byDay[day] === 0) delete s.byDay[day];
 
   for (const it of bill.items) {
     if (itemFilter && !itemFilter(it)) continue;
@@ -62,6 +70,10 @@ export function applyBill(s: Stats, bill: Bill, sign: 1 | -1, itemFilter?: (i: B
     const d = (s.byDish[String(it.menuId)] ??= { name: it.name, qty: 0, paise: 0 });
     d.qty += sign * it.qty;
     d.paise += sign * it.linePaise;
+    if (sign < 0) {
+      pruneQty(s.byCategory, it.category);
+      pruneQty(s.byDish, String(it.menuId));
+    }
   }
   return s;
 }

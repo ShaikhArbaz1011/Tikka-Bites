@@ -7,7 +7,19 @@ import './styles/print.css';
 
 import { $ } from './ui/dom';
 import { renderNav } from './ui/components/nav';
+import { showBackupReminder } from './ui/components/backupBanner';
 import { startRouter } from './router';
 
 const setActive = renderNav($('#nav'));
 startRouter($('#view'), setActive);
+
+// Ask the browser not to evict our IndexedDB data under storage pressure.
+void (async () => {
+  try {
+    if (navigator.storage?.persist && !(await navigator.storage.persisted())) await navigator.storage.persist();
+  } catch {
+    /* not supported: backups are the safety net */
+  }
+})();
+
+void showBackupReminder($('#banner-slot'));
