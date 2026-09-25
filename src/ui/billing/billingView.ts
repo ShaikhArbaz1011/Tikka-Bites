@@ -357,7 +357,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
       syncInputs();
       panel.classList.remove('is-open');
       const { showReceipt } = await import('../receipt/receiptView');
-      showReceipt(bill, { autoPrint: print });
+      void showReceipt(bill, { autoPrint: print });
     } catch (err) {
       toast(err instanceof BillError ? err.message : 'Could not save the bill. Please try again.', 'error', 5000);
       renderBill();

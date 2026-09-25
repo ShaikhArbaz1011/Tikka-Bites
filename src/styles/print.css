@@ -1,1 +1,59 @@
+/* ---------- Receipt (shared by on-screen preview and print) ---------- */
+.receipt {
+  --r-font: 12px;
+  margin: 0 auto; padding: 4mm 3mm; background: #fff; color: #000;
+  font: var(--r-font)/1.35 var(--font); font-variant-numeric: tabular-nums;
+}
+.receipt.w58 { width: 58mm; --r-font: 11px; padding: 3mm 2mm; }
+.receipt.w80 { width: 80mm; }
+.receipt.wA4 { width: 100%; max-width: 180mm; --r-font: 13px; padding: 8mm; }
+.r-head { text-align: center; display: grid; justify-items: center; gap: 2px; padding-bottom: 6px; border-bottom: 1px dashed #000; }
+.r-logo { max-width: 40%; max-height: 22mm; object-fit: contain; margin-bottom: 4px; }
+.wA4 .r-logo { max-width: 30mm; }
+.r-name { font-size: 1.35em; font-weight: 800; }
+.r-addr { font-size: 0.92em; white-space: pre-line; }
+.r-void { margin: 6px 0; padding: 4px; border: 2px solid #000; text-align: center; font-weight: 800; }
+.r-meta { padding: 6px 0; border-bottom: 1px dashed #000; }
+.r-row { display: flex; justify-content: space-between; gap: 8px; }
+.r-row > span:first-child { flex: none; }
+.r-num { text-align: right; overflow-wrap: anywhere; }
+.r-items { width: 100%; border-collapse: collapse; margin: 4px 0; }
+.r-items th { font-weight: 700; text-align: left; border-bottom: 1px solid #000; padding: 3px 0; }
+.r-items td { padding: 3px 0; vertical-align: top; }
+.r-items .r-qty { text-align: center; width: 3em; }
+.r-items .r-rate, .r-items .r-amt { text-align: right; white-space: nowrap; padding-left: 4px; }
+.r-item { overflow-wrap: anywhere; }
+.w58 .r-rate { display: none; } /* narrow paper: Item | Qty | Amount */
+.r-totals { padding: 6px 0; border-top: 1px dashed #000; display: grid; gap: 2px; }
+.r-grand { font-size: 1.3em; font-weight: 800; padding: 4px 0; margin: 2px 0; border-top: 1px solid #000; border-bottom: 1px solid #000; }
+.r-foot { text-align: center; padding-top: 8px; border-top: 1px dashed #000; display: grid; gap: 4px; }
+.r-cheesy { font-style: italic; font-weight: 600; }
+.r-thanks { font-size: 0.9em; }
+.wA4 .r-items th, .wA4 .r-items td { padding: 6px 4px; }
+.wA4 .r-items tbody tr { border-bottom: 1px solid #ddd; }
+
+/* ---------- Preview dialog ---------- */
+.receipt-modal { display: grid; gap: 12px; }
+.receipt-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.receipt-preview {
+  padding: 16px; background: var(--surface-2); border-radius: var(--radius-sm); overflow: auto; max-height: 60dvh;
+}
+.receipt-preview .receipt { box-shadow: 0 2px 10px rgb(0 0 0 / 0.15); }
+.btn-wa { background: #1fa855; border-color: #1fa855; color: #fff; text-decoration: none; }
+.btn-wa:hover { background: #178a45; border-color: #178a45; }
+
+/* ---------- Printing ---------- */
 .print-root { display: none; }
+@page thermal { margin: 0; }
+@page a4 { size: A4; margin: 12mm; }
+
+@media print {
+  html, body { background: #fff !important; }
+  body > *:not(#print-root) { display: none !important; }
+  .print-root { display: block !important; }
+  .print-w58, .print-w80 { page: thermal; }
+  .print-wA4 { page: a4; }
+  .print-root .receipt { box-shadow: none; margin: 0; }
+  .print-wA4 .receipt { margin: 0 auto; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
