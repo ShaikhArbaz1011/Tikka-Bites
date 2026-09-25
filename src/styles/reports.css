@@ -9,16 +9,9 @@
   --bad: #b91c1c;
 }
 @media (prefers-color-scheme: dark) {
-  :root {
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --grid: #2c3037;
-    --axis: #4a5059;
-    --good: #4ade80;
-    --bad: #f87171;
-  }
+  :root:not([data-theme="light"]) { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --grid: #2c2c2c; --axis: #4d4d4d; --good: #4ade80; --bad: #f87171; }
 }
+:root[data-theme="dark"] { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --grid: #2c2c2c; --axis: #4d4d4d; --good: #4ade80; --bad: #f87171; }
 
 .range-label { margin-top: 2px; }
 .status-line { font-size: 13px; margin: -4px 0 12px; min-height: 1.4em; }
@@ -127,7 +120,7 @@
 .bill-actions { grid-area: actions; display: flex; gap: 6px; justify-content: flex-end; }
 .bill-row.is-void .bill-total { text-decoration: line-through; color: var(--text-2); }
 .badge { justify-self: start; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; }
-.badge-void { background: var(--danger); color: #fff; }
+.badge-void { background: #b91c1c; color: #fff; }
 @media (max-width: 899px) { .bill-row .badge { grid-area: auto; grid-row: 1; grid-column: 1; justify-self: end; margin-right: 8px; } }
 .list-status { padding: 12px 0; }
 .sentinel { height: 1px; }

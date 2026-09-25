@@ -1,15 +1,23 @@
+/*
+ * Tikka Bites brand theme, taken from the logo: flame red, charcoal black, white.
+ * Light = the logo on white; dark = the logo's own black background.
+ * All text/background pairs meet WCAG AA (checked: white on red 5.5:1 light / 5.0:1 dark).
+ * Theme follows the device unless the user picks one (html[data-theme]).
+ */
 :root {
-  --bg: #faf7f2;
+  --bg: #faf7f5;
   --surface: #ffffff;
-  --surface-2: #f3eee6;
-  --border: #e6ded2;
-  --text: #1f2933;
-  --text-2: #5b6570;
-  --accent: #c2410c;           /* 5.2:1 with white text (WCAG AA) */
-  --accent-strong: #9a3412;
-  --accent-soft: #fff1e6;
+  --surface-2: #f2edea;
+  --border: #e6dcd8;
+  --text: #121212;
+  --text-2: #5c5552;
+  --accent: #d4000a;          /* logo red, buttons (white text 5.5:1) */
+  --accent-strong: #a50008;   /* red used as text / hover */
+  --accent-soft: #fdeceb;
+  --accent-hover: #a50008;    /* button hover: white text 7.6:1 */
   --on-accent: #ffffff;
-  --veg: #16a34a;
+  --brand-black: #0b0b0b;
+  --veg: #15803d;
   --nonveg: #b91c1c;
   --danger: #b91c1c;
   --success: #15803d;
@@ -20,33 +28,56 @@
   --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 4px 12px rgb(0 0 0 / 0.05);
   --gap: 16px;
   --tap: 44px;
-  --nav-w: 216px;
+  --nav-w: 232px;
   --rail-w: 76px;
   --bottom-nav-h: 64px;
 
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', 'Helvetica Neue', Arial, sans-serif;
+  --display: 'Impact', 'Haettenschweiler', 'Arial Narrow Bold', 'Segoe UI Black', system-ui, sans-serif;
   --mono: ui-monospace, 'Cascadia Mono', 'Consolas', 'Menlo', monospace;
   color-scheme: light;
 }
 
+/* Dark palette: applied by the OS setting (unless the user forced light) or by choice. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14161a;
-    --surface: #1d2026;
-    --surface-2: #262a31;
-    --border: #343941;
-    --text: #eef0f3;
-    --text-2: #a7b0ba;
-    --accent: #fb7a35;
-    --accent-strong: #fd9a63;
-    --accent-soft: #3a2518;
-    --on-accent: #1a0d05;
+  :root:not([data-theme='light']) {
+    --bg: #0b0b0b;
+    --surface: #171717;
+    --surface-2: #222222;
+    --border: #2f2f2f;
+    --text: #f5f3f2;
+    --text-2: #b3adaa;
+    --accent: #e00008;
+    --accent-strong: #ff6b6b;
+    --accent-soft: #2b0d0d;
+    --accent-hover: #b30007;
+    --on-accent: #ffffff;
     --veg: #22c55e;
     --nonveg: #f87171;
     --danger: #f87171;
     --success: #4ade80;
     --focus: #60a5fa;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
     color-scheme: dark;
   }
+}
+:root[data-theme='dark'] {
+  --bg: #0b0b0b;
+  --surface: #171717;
+  --surface-2: #222222;
+  --border: #2f2f2f;
+  --text: #f5f3f2;
+  --text-2: #b3adaa;
+  --accent: #e00008;
+  --accent-strong: #ff6b6b;
+  --accent-soft: #2b0d0d;
+  --accent-hover: #b30007;
+  --on-accent: #ffffff;
+  --veg: #22c55e;
+  --nonveg: #f87171;
+  --danger: #f87171;
+  --success: #4ade80;
+  --focus: #60a5fa;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
 }

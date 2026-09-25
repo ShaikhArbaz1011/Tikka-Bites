@@ -77,3 +77,11 @@ export function phone(s: string): Result<string | undefined> {
   if (!v) return ok(undefined);
   return /^\+?[\d\s-]{6,20}$/.test(v) ? ok(v) : err('Enter a valid phone number');
 }
+
+export const DISH_IMAGE_PATH_RE = /^\/dishes\/[a-z0-9-]{1,40}\.webp$/;
+export const MAX_DISH_IMAGE_CHARS = 200_000;
+
+/** A built-in photo path or a PNG/JPEG/WEBP data URL of sane size. */
+export function isDishImage(v: unknown): v is string {
+  return typeof v === 'string' && (DISH_IMAGE_PATH_RE.test(v) || (v.length <= MAX_DISH_IMAGE_CHARS && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(v)));
+}

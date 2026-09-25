@@ -1,6 +1,6 @@
 import { getDB } from './db';
 import type { Dish } from './types';
-import { cleanText, LIMITS } from '../core/validate';
+import { cleanText, LIMITS, isDishImage } from '../core/validate';
 import { MAX_PRICE_PAISE } from '../core/money';
 
 export interface DishInput {
@@ -9,9 +9,11 @@ export interface DishInput {
   pricePaise: number;
   isVeg: boolean;
   active: boolean;
+  image?: string;
 }
 
 export class MenuError extends Error {}
+
 
 function checkInput(d: DishInput): DishInput {
   const name = cleanText(d.name);
@@ -21,15 +23,19 @@ function checkInput(d: DishInput): DishInput {
   if (!Number.isSafeInteger(d.pricePaise) || d.pricePaise <= 0 || d.pricePaise > MAX_PRICE_PAISE) {
     throw new MenuError('Price must be more than 0 and at most ₹1,00,000');
   }
-  return { name, category, pricePaise: d.pricePaise, isVeg: !!d.isVeg, active: !!d.active };
+  if (d.image !== undefined && !isDishImage(d.image)) throw new MenuError('Invalid dish photo');
+  return { name, category, pricePaise: d.pricePaise, isVeg: !!d.isVeg, active: !!d.active, ...(d.image ? { image: d.image } : {}) };
 }
 
-/** All non-deleted dishes, sorted by category then name. */
+/**
+ * All non-deleted dishes in menu-card order: categories in the order they were
+ * first added (so the Tikka Bites sections stay 1 → 8), dishes in the order added.
+ */
 export async function listMenu(includeDeleted = false): Promise<Dish[]> {
-  const all = await (await getDB()).getAll('menu');
-  return all
-    .filter((d) => includeDeleted || !d.deleted)
-    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+  const all = (await (await getDB()).getAll('menu')).filter((d) => includeDeleted || !d.deleted);
+  const firstId = new Map<string, number>();
+  for (const d of all) firstId.set(d.category, Math.min(firstId.get(d.category) ?? Infinity, d.id));
+  return all.sort((a, b) => firstId.get(a.category)! - firstId.get(b.category)! || a.id - b.id);
 }
 
 export async function getDish(id: number): Promise<Dish | undefined> {
@@ -50,7 +56,8 @@ export async function updateDish(id: number, input: DishInput, now = Date.now())
   const tx = db.transaction('menu', 'readwrite');
   const existing = await tx.store.get(id);
   if (!existing || existing.deleted) throw new MenuError('Dish not found');
-  const updated: Dish = { ...existing, ...d, nameLower: d.name.toLowerCase(), updatedAt: now };
+  const { image: _old, ...rest } = existing;
+  const updated: Dish = { ...rest, ...d, nameLower: d.name.toLowerCase(), updatedAt: now };
   await tx.store.put(updated);
   await tx.done;
   return updated;
@@ -87,7 +94,7 @@ export async function deleteDish(id: number): Promise<'hard' | 'soft'> {
 
 export async function listCategories(): Promise<string[]> {
   const menu = await listMenu();
-  return [...new Set(menu.map((d) => d.category))].sort((a, b) => a.localeCompare(b));
+  return [...new Set(menu.map((d) => d.category))]; // menu-card order
 }
 
 export async function addDishes(inputs: DishInput[]): Promise<void> {

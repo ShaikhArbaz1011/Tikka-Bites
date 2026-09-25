@@ -10,8 +10,10 @@ import { renderNav } from './ui/components/nav';
 import { showBackupReminder } from './ui/components/backupBanner';
 import { startRouter } from './router';
 import { registerServiceWorker } from './pwa';
+import { applyTheme } from './theme';
 
-const setActive = renderNav($('#nav'));
+applyTheme();
+const setActive = renderNav($('#nav'), $('#topbar'));
 startRouter($('#view'), setActive);
 
 // Ask the browser not to evict our IndexedDB data under storage pressure.

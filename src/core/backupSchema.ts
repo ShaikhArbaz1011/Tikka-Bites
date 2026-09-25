@@ -6,9 +6,10 @@
 import { MAX_PRICE_PAISE, MAX_BP } from './money';
 import { BILL_NO_RE } from './billNo';
 import { discountAmount, type Discount } from './totals';
-import { LIMITS } from './validate';
+import { LIMITS, isDishImage } from './validate';
 import type { Bill, BillItem, CheesyLine, Dish, Settings } from '../db/types';
 import type { BagState } from './shuffleBag';
+
 
 export const BACKUP_APP = 'restobill';
 export const BACKUP_SCHEMA_VERSION = 1;
@@ -77,7 +78,7 @@ function arr(v: unknown, path: string, max: number): unknown[] {
 }
 
 function checkSettings(v: unknown, p: string): void {
-  const o = obj(v, p, ['name', 'address', 'phone', 'currencySymbol', 'receiptWidth', 'roundOff'], ['logoDataUrl', 'lastBackupAt']);
+  const o = obj(v, p, ['name', 'address', 'phone', 'currencySymbol', 'receiptWidth', 'roundOff'], ['logoDataUrl', 'lastBackupAt', 'printLogo']);
   str(o['name'], `${p}.name`, 1, LIMITS.restaurantName);
   str(o['address'], `${p}.address`, 0, LIMITS.address);
   str(o['phone'], `${p}.phone`, 0, LIMITS.phone);
@@ -89,10 +90,12 @@ function checkSettings(v: unknown, p: string): void {
     if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(logo)) fail(`${p}.logoDataUrl`, 'must be a PNG, JPEG or WEBP image');
   }
   if ('lastBackupAt' in o) int(o['lastBackupAt'], `${p}.lastBackupAt`, 0, MAX_TIME);
+  if ('printLogo' in o) bool(o['printLogo'], `${p}.printLogo`);
 }
 
 function checkDish(v: unknown, p: string): number {
-  const o = obj(v, p, ['id', 'name', 'nameLower', 'category', 'pricePaise', 'isVeg', 'active', 'deleted', 'usedInBills', 'createdAt', 'updatedAt']);
+  const o = obj(v, p, ['id', 'name', 'nameLower', 'category', 'pricePaise', 'isVeg', 'active', 'deleted', 'usedInBills', 'createdAt', 'updatedAt'], ['image']);
+  if ('image' in o && !isDishImage(o['image'])) fail(`${p}.image`, 'must be a built-in dish photo or a PNG, JPEG or WEBP image');
   const id = int(o['id'], `${p}.id`, 1, Number.MAX_SAFE_INTEGER);
   const name = str(o['name'], `${p}.name`, 1, LIMITS.dishName);
   if (o['nameLower'] !== name.toLowerCase()) fail(`${p}.nameLower`, 'does not match name');

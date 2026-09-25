@@ -41,7 +41,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
   const money = (p: number) => formatINR(p, sym);
   const compact = (p: number) => formatCompactINR(p, sym);
   const wholeRupees = (p: number) => money(Math.round(p / 100) * 100).replace(/\.00$/, '');
-  const categories = [...new Set(menuAll.map((d) => d.category))].sort((a, b) => a.localeCompare(b));
+  const categories = [...new Set(menuAll.map((d) => d.category))]; // menu-card order
 
   const cleanups: (() => void)[] = [];
   const title = h('p', { class: 'muted range-label' });

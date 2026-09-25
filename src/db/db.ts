@@ -20,13 +20,17 @@ export type DB = IDBPDatabase<RestoDB>;
 export const SETTINGS_KEY = 'app';
 
 export const DEFAULT_SETTINGS: Settings = {
-  name: 'My Restaurant',
+  name: 'Tikka Bites',
   address: '',
-  phone: '',
+  phone: '9137582060',
   currencySymbol: '₹',
   receiptWidth: '80',
   roundOff: true,
+  printLogo: true,
 };
+
+/** Built-in round Tikka Bites logo used on receipts unless another logo is uploaded. */
+export const BUILT_IN_LOGO = '/brand/logo-round-300.webp';
 
 let dbPromise: Promise<DB> | undefined;
 

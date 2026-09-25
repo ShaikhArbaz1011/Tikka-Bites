@@ -1,6 +1,6 @@
 import { h, replaceChildren } from '../dom';
 import { icon } from '../components/icons';
-import { field, textInput, select } from '../components/form';
+import { field, textInput, select, segmented } from '../components/form';
 import { toast } from '../components/toast';
 import { linesEditor } from './linesEditor';
 import { runBackup, runRestore } from './backupActions';
@@ -11,12 +11,14 @@ import { logoToDataUrl, LogoError } from '../../core/image';
 import { formatDateTime } from '../../core/dates';
 import * as v from '../../core/validate';
 import type { ReceiptWidth } from '../../db/types';
+import { BUILT_IN_LOGO } from '../../db/db';
+import { getThemePref, setThemePref, type ThemePref } from '../../theme';
 
 function section(title: string, desc: string, ...children: Node[]): HTMLElement {
   return h('section', { class: 'card settings-card' }, h('h2', { class: 'section-title', text: title }), h('p', { class: 'muted section-desc', text: desc }), ...children);
 }
 
-export async function mount(root: HTMLElement): Promise<void> {
+export async function mount(root: HTMLElement): Promise<() => void> {
   const s = await getSettings();
 
   // ---------- Restaurant details ----------
@@ -59,11 +61,17 @@ export async function mount(root: HTMLElement): Promise<void> {
   // ---------- Logo ----------
   const logoBox = h('div', { class: 'logo-box' });
   const fileInput = h('input', { class: 'visually-hidden', attrs: { type: 'file', accept: 'image/png,image/jpeg,image/webp', id: 'logo-file' } });
-  const uploadLabel = h('label', { class: 'btn', attrs: { for: 'logo-file' } }, icon('upload', 18), 'Upload logo');
-  const removeBtn = h('button', { class: 'btn btn-danger', text: 'Remove', attrs: { type: 'button' } });
+  const uploadLabel = h('label', { class: 'btn', attrs: { for: 'logo-file' } }, icon('upload', 18), 'Upload a different logo');
+  const removeBtn = h('button', { class: 'btn', text: 'Use Tikka Bites logo', attrs: { type: 'button' } });
+  const printLogo = h('input', { attrs: { type: 'checkbox', id: 'set-print-logo' } });
+  printLogo.checked = s.printLogo !== false;
+  printLogo.addEventListener('change', async () => {
+    await saveSettings({ printLogo: printLogo.checked });
+    toast(printLogo.checked ? 'Logo will print on receipts' : 'Receipts will print without a logo', 'success');
+  });
   let logo = s.logoDataUrl;
   const renderLogo = () => {
-    replaceChildren(logoBox, logo ? h('img', { class: 'logo-img', attrs: { src: logo, alt: 'Current logo' } }) : h('span', { class: 'muted', text: 'No logo' }));
+    replaceChildren(logoBox, h('img', { class: 'logo-img', attrs: { src: logo ?? BUILT_IN_LOGO, alt: logo ? 'Uploaded logo' : 'Tikka Bites logo' } }));
     removeBtn.hidden = !logo;
   };
   fileInput.addEventListener('change', async () => {
@@ -85,6 +93,12 @@ export async function mount(root: HTMLElement): Promise<void> {
     renderLogo();
   });
   renderLogo();
+
+  // ---------- Appearance ----------
+  const theme = segmented('theme', 'Theme', [['system', 'Same as device'], ['light', 'Light'], ['dark', 'Dark']], getThemePref());
+  theme.el.addEventListener('change', () => setThemePref(theme.get() as ThemePref));
+  const onTheme = () => theme.set(getThemePref());
+  document.addEventListener('themechange', onTheme);
 
   // ---------- Backup ----------
   const lastBackup = h('p', {});
@@ -130,7 +144,10 @@ export async function mount(root: HTMLElement): Promise<void> {
       'div',
       { class: 'settings' },
       section('Restaurant details', 'Printed at the top of every receipt.', detailsForm),
-      section('Logo', 'PNG, JPG or WEBP up to 2 MB. It is resized to 300px and stored on this device.', h('div', { class: 'logo-row' }, logoBox, h('div', { class: 'btn-row' }, fileInput, uploadLabel, removeBtn))),
+      section('Receipt logo', 'The round Tikka Bites logo prints at the top of every receipt. You can upload a different PNG, JPG or WEBP (up to 2 MB); it is resized to 300px and stored on this device.',
+        h('div', { class: 'logo-row' }, logoBox, h('div', { class: 'btn-row' }, fileInput, uploadLabel, removeBtn)),
+        h('label', { class: 'check-row', attrs: { for: 'set-print-logo' } }, printLogo, h('span', { text: 'Print the logo on receipts' }))),
+      section('Appearance', 'Tikka Bites colours: flame red on white (light) or on charcoal black (dark). Saved on this device.', theme.el),
       section('Receipt lines', 'Fun one-liners printed at the bottom of each receipt.', await linesEditor()),
       section(
         'Backup & restore',
@@ -141,4 +158,5 @@ export async function mount(root: HTMLElement): Promise<void> {
       ),
     ),
   );
+  return () => document.removeEventListener('themechange', onTheme);
 }

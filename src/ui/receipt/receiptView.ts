@@ -15,6 +15,13 @@ function preparePrint(bill: Bill, s: Settings, width: ReceiptWidth): void {
   replaceChildren(root, buildReceipt(bill, s, width));
 }
 
+/** Print once every image in the receipt (the logo) has loaded, so it is never missing. */
+async function printWhenReady(): Promise<void> {
+  const imgs = [...document.querySelectorAll<HTMLImageElement>('#print-root img')];
+  await Promise.all(imgs.map((i) => i.decode().catch(() => undefined)));
+  window.print();
+}
+
 function clearPrint(): void {
   const root = document.getElementById('print-root');
   if (root) root.replaceChildren();
@@ -54,8 +61,8 @@ export async function showReceipt(bill: Bill, opts: { autoPrint?: boolean } = {}
   );
   const m = openModal({ title: `Bill ${bill.billNo}`, body, actions: [done, wa, print], wide: true, onClose: clearPrint });
   done.addEventListener('click', m.close);
-  print.addEventListener('click', () => window.print());
+  print.addEventListener('click', () => void printWhenReady());
   render();
   print.focus();
-  if (opts.autoPrint) requestAnimationFrame(() => setTimeout(() => window.print(), 50));
+  if (opts.autoPrint) requestAnimationFrame(() => void printWhenReady());
 }

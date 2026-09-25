@@ -116,8 +116,8 @@ test('works offline after the first visit (PWA)', async ({ page, context }) => {
   await page.reload();
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
   await page.goto('/#/menu');
-  await page.getByRole('button', { name: /Load sample menu/ }).click();
-  await expect(page.locator('.dish-row')).toHaveCount(20);
+  await page.getByRole('button', { name: /Load Tikka Bites menu/ }).click();
+  await expect(page.locator('.dish-row')).toHaveCount(40);
 
   await context.setOffline(true);
   await page.reload();

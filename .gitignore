@@ -5,3 +5,6 @@ playwright-report
 screenshots
 *.log
 seed-*.json
+
+# Original brand source files (logos PDF, photos): kept locally, derived assets live in public/
+reference_files/

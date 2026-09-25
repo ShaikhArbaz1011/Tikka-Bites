@@ -1,6 +1,6 @@
-# RestoBill — offline restaurant billing
+# Tikka Bites — billing app
 
-A fast, installable billing app for a small restaurant. It runs entirely in the browser:
+*Taste the flame.* A fast, installable billing app built for **Tikka Bites** (📞 9137582060). It runs entirely in the browser:
 there's **no login, no server, no monthly fee**, and **your data never leaves the device**.
 
 - **Billing:** tap dishes to add them. Supports Dine-in (with table no.), Takeaway or Delivery,
@@ -8,10 +8,11 @@ there's **no login, no server, no monthly fee**, and **your data never leaves th
 - **Bill numbers:** `INV-YYYYMM-0001`. They restart every month and can never repeat.
 - **Receipts:**
   - 58 mm and 80 mm thermal paper, or A4. "Save as PDF" works from the print dialog.
-  - Your logo, name, address and phone at the top.
+  - The round Tikka Bites logo, name, address and phone at the top. You can upload a different logo or turn the logo off.
   - A cheesy one-liner at the bottom. 40 are built in, you can add your own, and none repeats until all have been used.
   - A **Share on WhatsApp** button.
-- **Menu:** add, edit and disable dishes, with veg/non-veg marks. A dish that appears in old bills is hidden when deleted, never erased.
+- **Menu:** comes with the full **Tikka Bites menu**: 40 dishes in the menu card's 8 sections (Grill Gali, Lapete Mein, Burger Adda, Toast Ka Dosh, Murga Bole Kukdoo Koo, Aloo Ke Laloo, Mitthu Miya, Thanda Matter), each with a photo. You can add, edit and disable dishes and upload your own dish photos. A dish that appears in old bills is hidden when deleted, never erased.
+- **Brand:** the round Tikka Bites logo prints on every receipt, and the wide logo sits in the app header. Light and dark themes use the logo's flame red, charcoal black and white. The theme follows your device, or you can pick one (the button in the nav, or *Settings → Appearance*).
 - **Reports:**
   - Revenue, bill count, average bill, top and least-sold dishes, sales by category, payment split, peak hours, best weekdays, and a month-over-month comparison.
   - Filters: date presets, month picker, custom range, category, payment, order type, veg/non-veg, amount range, bill number.

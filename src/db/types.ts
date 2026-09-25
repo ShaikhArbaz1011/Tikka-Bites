@@ -17,6 +17,8 @@ export interface Dish {
   category: string;
   pricePaise: Paise;
   isVeg: boolean;
+  /** Built-in photo path (/dishes/x.webp) or an uploaded photo (data URL). */
+  image?: string;
   active: boolean;
   deleted: boolean;
   usedInBills: boolean;
@@ -68,6 +70,8 @@ export interface Settings {
   currencySymbol: string;
   receiptWidth: ReceiptWidth;
   roundOff: boolean;
+  /** Print the logo at the top of receipts (default true). */
+  printLogo?: boolean;
   lastBackupAt?: number;
 }
 

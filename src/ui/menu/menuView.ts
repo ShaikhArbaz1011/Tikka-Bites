@@ -1,13 +1,14 @@
 import { h, replaceChildren, rafBatch } from '../dom';
 import { icon } from '../components/icons';
 import { vegMark } from '../components/vegMark';
+import { dishPhoto } from '../components/dishPhoto';
 import { select, toggle } from '../components/form';
 import { confirmDialog } from '../components/modal';
 import { toast } from '../components/toast';
 import { openDishForm } from './dishForm';
 import { getMenu, refreshMenu, onMenuChange, searchDishes, type IndexedDish } from '../../state/menuStore';
 import { setDishActive, deleteDish, addDishes } from '../../db/menuRepo';
-import { SAMPLE_MENU } from '../../data/sampleMenu';
+import { TIKKA_BITES_MENU } from '../../data/sampleMenu';
 import { formatINR } from '../../core/money';
 import { debounce } from '../../core/debounce';
 import type { Cleanup } from '../../router';
@@ -42,7 +43,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     empty,
   );
 
-  const categories = () => [...new Set(dishes.map((d) => d.category))].sort((a, b) => a.localeCompare(b));
+  const categories = () => [...new Set(dishes.map((d) => d.category))]; // menu-card order
 
   const renderCategories = () => {
     const cur = catFilter.value;
@@ -54,6 +55,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     h(
       'li',
       { class: `dish-row${d.active ? '' : ' is-disabled'}`, dataset: { id: String(d.id) } },
+      dishPhoto(d.image, d.name, 'dish-thumb'),
       vegMark(d.isVeg),
       h('div', { class: 'dish-main' }, h('span', { class: 'dish-name', text: d.name }), h('span', { class: 'dish-cat', text: d.category })),
       h('span', { class: 'dish-price', text: formatINR(d.pricePaise) }),
@@ -74,16 +76,16 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     empty.hidden = shown.length > 0;
     if (!shown.length) {
       if (dishes.length === 0) {
-        const sample = h('button', { class: 'btn', text: 'Load sample menu (20 dishes)', attrs: { type: 'button' } });
+        const sample = h('button', { class: 'btn btn-primary', text: `Load Tikka Bites menu (${TIKKA_BITES_MENU.length} dishes)`, attrs: { type: 'button' } });
         sample.addEventListener('click', async () => {
           sample.disabled = true;
-          await addDishes(SAMPLE_MENU);
+          await addDishes(TIKKA_BITES_MENU);
           await refreshMenu();
-          toast('Sample menu added', 'success');
+          toast('Tikka Bites menu added', 'success');
         });
-        const add = h('button', { class: 'btn btn-primary', text: 'Add your first dish', attrs: { type: 'button' } });
+        const add = h('button', { class: 'btn', text: 'Add your first dish', attrs: { type: 'button' } });
         add.addEventListener('click', () => openDishForm(undefined, []));
-        replaceChildren(empty, h('p', { class: 'empty-title', text: 'Your menu is empty' }), h('p', { class: 'muted', text: 'Add dishes one by one, or start with a sample menu you can edit.' }), h('div', { class: 'empty-actions' }, add, sample));
+        replaceChildren(empty, h('p', { class: 'empty-title', text: 'Your menu is empty' }), h('p', { class: 'muted', text: 'Load the full Tikka Bites menu with photos (you can edit any dish), or add dishes one by one.' }), h('div', { class: 'empty-actions' }, sample, add));
       } else {
         replaceChildren(empty, h('p', { class: 'empty-title', text: 'No dishes match' }), h('p', { class: 'muted', text: 'Try a different search or filter.' }));
       }

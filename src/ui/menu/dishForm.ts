@@ -2,6 +2,9 @@ import { h } from '../dom';
 import { openModal } from '../components/modal';
 import { field, textInput, segmented } from '../components/form';
 import { toast } from '../components/toast';
+import { icon } from '../components/icons';
+import { dishPhoto } from '../components/dishPhoto';
+import { imageToDataUrl, LogoError } from '../../core/image';
 import { addDish, updateDish, MenuError, type DishInput } from '../../db/menuRepo';
 import { refreshMenu } from '../../state/menuStore';
 import * as v from '../../core/validate';
@@ -23,6 +26,33 @@ export function openDishForm(existing: Dish | undefined, categories: string[]): 
     textInput({ inputmode: 'decimal', required: true, placeholder: 'e.g. 249 or 99.50', value: existing ? paiseToDecimal(existing.pricePaise) : '' }),
   );
   const veg = segmented('veg', 'Food type', [['veg', 'Veg'], ['nonveg', 'Non-veg']], existing && !existing.isVeg ? 'nonveg' : 'veg');
+  // Photo: keep, replace (upload) or remove.
+  let image = existing?.image;
+  const photoBox = h('div', { class: 'photo-box' });
+  const photoInput = h('input', { class: 'visually-hidden', attrs: { type: 'file', accept: 'image/png,image/jpeg,image/webp', id: 'dish-photo' } });
+  const photoLabel = h('label', { class: 'btn btn-sm', attrs: { for: 'dish-photo' } }, icon('image', 16), 'Choose photo');
+  const photoRemove = h('button', { class: 'btn btn-sm btn-ghost', text: 'Remove photo', attrs: { type: 'button' } });
+  const renderPhoto = () => {
+    photoBox.replaceChildren(dishPhoto(image, name.input.value || '?', 'photo-preview'));
+    photoRemove.hidden = !image;
+  };
+  photoInput.addEventListener('change', async () => {
+    const file = photoInput.files?.[0];
+    photoInput.value = '';
+    if (!file) return;
+    try {
+      image = await imageToDataUrl(file, 400);
+      renderPhoto();
+    } catch (err) {
+      toast(err instanceof LogoError ? err.message : 'Could not use this image', 'error', 5000);
+    }
+  });
+  photoRemove.addEventListener('click', () => {
+    image = undefined;
+    renderPhoto();
+  });
+  renderPhoto();
+
   const active = h('input', { attrs: { type: 'checkbox', id: 'dish-active' } });
   active.checked = existing?.active ?? true;
   const activeRow = h('label', { class: 'check-row', attrs: { for: 'dish-active' } }, active, h('span', { text: 'Available for billing' }));
@@ -38,6 +68,7 @@ export function openDishForm(existing: Dish | undefined, categories: string[]): 
     datalist,
     price.wrap,
     h('div', { class: 'field' }, h('span', { class: 'field-label', text: 'Type' }), veg.el),
+    h('div', { class: 'field' }, h('span', { class: 'field-label', text: 'Photo (optional)' }), h('div', { class: 'photo-row' }, photoBox, h('div', { class: 'btn-row' }, photoInput, photoLabel, photoRemove))),
     activeRow,
   );
 
@@ -57,7 +88,7 @@ export function openDishForm(existing: Dish | undefined, categories: string[]): 
       (!n.ok ? name : !c.ok ? category : price).input.focus();
       return;
     }
-    const input: DishInput = { name: n.value, category: c.value, pricePaise: p.value, isVeg: veg.get() === 'veg', active: active.checked };
+    const input: DishInput = { name: n.value, category: c.value, pricePaise: p.value, isVeg: veg.get() === 'veg', active: active.checked, ...(image ? { image } : {}) };
     save.disabled = true;
     try {
       if (existing) await updateDish(existing.id, input);

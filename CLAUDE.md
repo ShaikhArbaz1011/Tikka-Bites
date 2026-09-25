@@ -25,6 +25,11 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 - `formatINR()` is the only place that converts paise to a ₹ string, and only for display.
 - Bills store snapshots (item name, price, cheesy line). Never recompute an old bill from the current menu.
 
+## Branding (Tikka Bites)
+- Use colour tokens from `src/styles/tokens.css` only. Button hover uses `--accent-hover`; red text uses `--accent-strong`. Check new colour pairs for WCAG AA in both themes.
+- The menu keeps menu-card order (categories by first-added id), so don't sort categories alphabetically.
+- Dish photos: built-in ones are `/dishes/<slug>.webp` (400×300 WEBP); uploaded ones go through `imageToDataUrl`.
+
 ## Security
 - **Never** use `innerHTML`, `outerHTML`, `insertAdjacentHTML`, or `document.write`.
   Build DOM with `h()` from `src/ui/dom.ts`, `textContent`, and `createElement`. A unit test enforces this.

@@ -10,6 +10,23 @@ services. All data lives in the browser (IndexedDB). Deploys free on Netlify or 
 
 ---
 
+## 0. Branding (added after v1): Tikka Bites
+
+- **Source files:** `reference_files/` holds the menu card, the wide shop logo, the round logo (PDF) and 5 dish photos.
+- **Theme:** brand tokens in `src/styles/tokens.css`, taken from the logo.
+  - Light: flame red `#D4000A` on white.
+  - Dark: `#E00008` on charcoal `#0B0B0B`.
+  - Every text pair meets WCAG AA.
+  - The theme follows the device by default; a user choice is saved in localStorage (`src/theme.ts`).
+- **Logos:**
+  - `public/brand/logo-round-*.webp`: the round logo, cut out of the PDF with a transparent circle. It's used on receipts (default, and it can be switched off), for the tablet rail and the phone top bar, and for the PWA icons.
+  - `public/brand/logo-wide.webp`: the wide logo, used in the desktop sidebar.
+- **Menu:** `src/data/sampleMenu.ts` has the 40 dishes from the menu card. Categories keep the card's section names and order, and Half/Full or piece counts are separate dishes.
+- **Dish photos:** `public/dishes/*.webp`, 400×300.
+  - Hero crops of the 5 real photos with a colour boost.
+  - For dishes without a photo: food artwork cropped from the menu card.
+  - `Dish.image` is either a built-in path or an uploaded data URL (validated in `core/validate.ts#isDishImage`).
+
 ## 1. Design source
 
 `/design` does not exist in the repo, and the frontend-design plugin is not

@@ -23,8 +23,13 @@ export function fitWithin(w: number, h: number, max = LOGO_MAX_SIDE): { w: numbe
 
 export class LogoError extends Error {}
 
-/** Validate an uploaded file and return a compressed data URL (≤ 300px). Browser only. */
-export async function logoToDataUrl(file: File): Promise<string> {
+/** Validate an uploaded logo and return a compressed data URL (≤ 300px). Browser only. */
+export function logoToDataUrl(file: File): Promise<string> {
+  return imageToDataUrl(file, LOGO_MAX_SIDE);
+}
+
+/** Validate an uploaded image and return a compressed data URL, longest side ≤ maxSide. Browser only. */
+export async function imageToDataUrl(file: File, maxSide: number): Promise<string> {
   if (!ALLOWED_MIME.includes(file.type)) throw new LogoError('Please choose a PNG, JPG or WEBP image');
   if (file.size > MAX_LOGO_BYTES) throw new LogoError('Image must be 2 MB or smaller');
   const kind = sniffImageType(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
@@ -36,7 +41,7 @@ export async function logoToDataUrl(file: File): Promise<string> {
   } catch {
     throw new LogoError('Could not read this image');
   }
-  const { w, h } = fitWithin(bitmap.width, bitmap.height);
+  const { w, h } = fitWithin(bitmap.width, bitmap.height, maxSide);
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -47,7 +52,8 @@ export async function logoToDataUrl(file: File): Promise<string> {
   bitmap.close();
 
   // WEBP keeps transparency and is small; fall back where unsupported (older Safari).
-  let url = canvas.toDataURL('image/webp', 0.85);
-  if (!url.startsWith('data:image/webp')) url = kind === 'jpeg' ? canvas.toDataURL('image/jpeg', 0.85) : canvas.toDataURL('image/png');
+  let url = canvas.toDataURL('image/webp', 0.82);
+  // Logos may need transparency (PNG); photos stay small as JPEG.
+  if (!url.startsWith('data:image/webp')) url = kind === 'png' && maxSide <= LOGO_MAX_SIDE ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.85);
   return url;
 }
