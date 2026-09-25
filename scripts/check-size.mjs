@@ -7,7 +7,7 @@ const BUDGET_KB = 60;
 const dist = 'dist';
 const html = readFileSync(join(dist, 'index.html'), 'utf8');
 const initial = new Set(
-  [...html.matchAll(/(?:src|href)="\/(assets\/[^"]+\.js)"/g)].map((m) => m[1]),
+  [...html.matchAll(/(?:src|href)="(?:\.?\/)?(assets\/[^"]+\.js)"/g)].map((m) => m[1]),
 );
 
 const kb = (file) => gzipSync(readFileSync(join(dist, file)), { level: 9 }).length / 1024;

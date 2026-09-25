@@ -55,7 +55,8 @@ test('add dishes → bill → print preview → appears in reports → void', as
   await page.getByLabel('Table number').fill('9');
   await page.locator('label.seg-label', { hasText: '%' }).click();
   await page.getByLabel('Discount').fill('10');
-  await page.locator('label.seg-label', { hasText: 'Card' }).click();
+  await page.locator('label.seg-label', { hasText: 'UPI' }).click();
+  await expect(page.locator('label.seg-label', { hasText: 'Card' })).toHaveCount(0); // Card removed
   // 240 + 310.50 = 550.50; −10% = 55.05 → 495.45 → rounds to 495.00
   await expect(page.locator('.trow-total')).toContainText('₹495.00');
 
@@ -67,7 +68,7 @@ test('add dishes → bill → print preview → appears in reports → void', as
   await expect(dialog.locator('.receipt')).toContainText('Masala Dosa');
   await expect(dialog.locator('.receipt')).toContainText('Dine-in · Table 9');
   await expect(dialog.locator('.r-grand')).toContainText('₹495.00');
-  await expect(dialog.locator('.receipt')).toContainText('Card');
+  await expect(dialog.locator('.receipt')).toContainText('UPI');
   await expect.poll(() => page.evaluate(() => (window as unknown as { __prints: number }).__prints)).toBe(1);
   const cheesy = await dialog.locator('.r-cheesy').innerText();
   expect(cheesy.length).toBeGreaterThan(5);

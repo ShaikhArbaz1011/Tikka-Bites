@@ -114,7 +114,7 @@ export function parseDraft(raw: unknown, validIds: Set<number>): CartData | null
     orderType: (['dine-in', 'takeaway', 'delivery'] as const).find((t) => t === r['orderType']) ?? base.orderType,
     tableNo: str(r['tableNo'], LIMITS.tableNo),
     customerName: str(r['customerName'], LIMITS.customerName),
-    paymentMode: (['cash', 'upi', 'card'] as const).find((t) => t === r['paymentMode']) ?? base.paymentMode,
+    paymentMode: (['cash', 'upi'] as const).find((t) => t === r['paymentMode']) ?? base.paymentMode,
     discountKind: r['discountKind'] === 'pct' ? 'pct' : 'flat',
     discountInput: str(r['discountInput'], 12),
   };

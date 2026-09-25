@@ -30,6 +30,12 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 - The menu keeps menu-card order (categories by first-added id), so don't sort categories alphabetically.
 - Dish photos: built-in ones are `/dishes/<slug>.webp` (400×300 WEBP); uploaded ones go through `imageToDataUrl`.
 
+## Scope decisions (owner requests)
+- Payment modes are **Cash and UPI only**. Don't add Card back; `'card'` exists only so old bills stay readable.
+- **Excel `.xlsx` is the only export format** (`src/core/xlsx.ts`). Don't add CSV back.
+- Every date uses local time (IST). New date logic needs a case in `tests/unit/month.test.ts`.
+- Asset paths must work under a sub-folder (GitHub Pages). Use `assetUrl()` for built-in images and never hard-code `/…` URLs.
+
 ## Security
 - **Never** use `innerHTML`, `outerHTML`, `insertAdjacentHTML`, or `document.write`.
   Build DOM with `h()` from `src/ui/dom.ts`, `textContent`, and `createElement`. A unit test enforces this.

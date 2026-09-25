@@ -6,7 +6,7 @@ import { filterBar } from './filters';
 import { runReport, dishRankings, monthComparison, pctChange, type ReportFilter, type DishRank } from './query';
 import { columnChart, rowChart, shareBar, lineChart, responsive, withTooltip } from './charts';
 import { billList } from './billList';
-import { exportBillsCsv, exportItemsCsv } from './exportCsv';
+import { exportExcel } from './exportExcel';
 import { getMenu } from '../../state/menuStore';
 import { listMenu } from '../../db/menuRepo';
 import { getSettings } from '../../db/settingsRepo';
@@ -46,8 +46,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
   const cleanups: (() => void)[] = [];
   const title = h('p', { class: 'muted range-label' });
   const statusLine = h('p', { class: 'muted status-line', attrs: { role: 'status' } });
-  const csvBills = h('button', { class: 'btn btn-sm', attrs: { type: 'button' } }, icon('download', 16), 'Bills CSV');
-  const csvItems = h('button', { class: 'btn btn-sm', attrs: { type: 'button' } }, icon('download', 16), 'Items CSV');
+  const excelBtn = h('button', { class: 'btn btn-sm btn-excel', attrs: { type: 'button' } }, icon('download', 16), 'Export to Excel');
   const body = h('div', { class: 'report-body' });
   const bills = billList(() => refresh());
   cleanups.push(() => bills.destroy());
@@ -56,19 +55,26 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
   root.append(
     h('header', { class: 'page-head' },
       h('div', {}, h('h1', { class: 'page-title', text: 'Reports' }), title),
-      h('div', { class: 'btn-row' }, csvBills, csvItems)),
+      h('div', { class: 'btn-row' }, excelBtn)),
     filters.el,
     statusLine,
     body,
     card('Bills', 'Newest first. View to reprint (same cheesy line), or void with a reason.', bills.el),
   );
 
-  const exportWith = (fn: (f: ReportFilter) => Promise<number>) => async () => {
-    const n = await fn(filters.current().filter);
-    toast(n ? `Exported ${n.toLocaleString('en-IN')} rows` : 'Nothing to export for these filters', n ? 'success' : 'info');
-  };
-  csvBills.addEventListener('click', exportWith(exportBillsCsv));
-  csvItems.addEventListener('click', exportWith(exportItemsCsv));
+  excelBtn.addEventListener('click', async () => {
+    excelBtn.disabled = true;
+    try {
+      const { filter, label } = filters.current();
+      const r = await exportExcel(filter, label, settings.name);
+      toast(r.bills ? `Excel file ready: ${r.bills.toLocaleString('en-IN')} bills` : 'No bills in this period — exported an empty report', r.bills ? 'success' : 'info');
+    } catch (e) {
+      console.error(e);
+      toast('Could not create the Excel file', 'error');
+    } finally {
+      excelBtn.disabled = false;
+    }
+  });
 
   const chartHost = (draw: (w: number) => SVGSVGElement) => {
     const host = h('div', { class: 'chart-host' });
@@ -112,7 +118,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     const cmp = await monthComparison(monthKeyOf(f.range.start));
     if (my !== token) return; // a newer filter change won
     statusLine.textContent = data.source === 'summary'
-      ? `Instant summary · ${s.billCount.toLocaleString('en-IN')} bills`
+      ? `Instant summary · ${s.billCount.toLocaleString('en-IN')} bill${s.billCount === 1 ? '' : 's'}`
       : `Scanned ${data.scanned.toLocaleString('en-IN')} bills in ${Math.round(data.ms)} ms`;
     title.textContent = label;
 
@@ -128,7 +134,10 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     const catRows = cats.map(([name, v]) => ({ label: name, value: v.paise, display: compact(v.paise), tip: `${name}\n${money(v.paise)} · ${v.qty} sold` }));
 
     // Payment split (fixed order → color follows the payment mode, never its rank)
-    const pay = (['cash', 'upi', 'card'] as const).map((k, i) => ({ k, label: ['Cash', 'UPI', 'Card'][i]!, cls: (['s1', 's2', 's3'] as const)[i]!, v: s.byPayment[k] ?? { count: 0, paise: 0 } }));
+    // Cash / UPI; a legacy Card slice appears only if old card bills fall in the range.
+    const pay = (['cash', 'upi', 'card'] as const)
+      .map((k, i) => ({ k, label: ['Cash', 'UPI', 'Card'][i]!, cls: (['s1', 's2', 's3'] as const)[i]!, v: s.byPayment[k] ?? { count: 0, paise: 0 } }))
+      .filter((p) => p.k !== 'card' || p.v.count > 0);
     const payTotal = pay.reduce((t, p) => t + p.v.paise, 0) || 1;
     const pct = (p: number) => `${Math.round((p / payTotal) * 100)}%`;
 

@@ -70,7 +70,7 @@ for (const tRaw of times) {
     billNo: `INV-${monthKey}-${String(seq).padStart(4, '0')}`,
     createdAt, monthKey, hour: d.getHours(), weekday: d.getDay(), items, orderType,
     ...(orderType === 'dine-in' ? { tableNo: String(1 + r(15)) } : {}),
-    paymentMode: ['cash', 'upi', 'upi', 'upi', 'card'][r(5)],
+    paymentMode: ['cash', 'upi', 'upi', 'upi'][r(4)],
     discount, subtotalPaise: subtotal, discountPaise, roundOffPaise: total - raw, totalPaise: total,
     itemCount: items.reduce((a, i) => a + i.qty, 0),
     categories: [...new Set(items.map((i) => i.category))],

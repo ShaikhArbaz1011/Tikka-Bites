@@ -4,7 +4,7 @@
 there's **no login, no server, no monthly fee**, and **your data never leaves the device**.
 
 - **Billing:** tap dishes to add them. Supports Dine-in (with table no.), Takeaway or Delivery,
-  flat ₹ or % discounts, Cash / UPI / Card, and an optional customer name.
+  flat ₹ or % discounts, Cash / UPI, and an optional customer name.
 - **Bill numbers:** `INV-YYYYMM-0001`. They restart every month and can never repeat.
 - **Receipts:**
   - 58 mm and 80 mm thermal paper, or A4. "Save as PDF" works from the print dialog.
@@ -16,7 +16,8 @@ there's **no login, no server, no monthly fee**, and **your data never leaves th
 - **Reports:**
   - Revenue, bill count, average bill, top and least-sold dishes, sales by category, payment split, peak hours, best weekdays, and a month-over-month comparison.
   - Filters: date presets, month picker, custom range, category, payment, order type, veg/non-veg, amount range, bill number.
-  - CSV export (opens in Excel). Void a bill with a reason; it's kept on record but left out of totals.
+  - **Export to Excel** (`.xlsx`) for any filtered period. You get one workbook with Summary, Bills, Items and Dish Sales sheets. Dates and times are real Excel dates, and amounts are in ₹.
+  - Void a bill with a reason; it's kept on record but left out of totals.
 - **Data safety:** one-click JSON backup, and a restore that strictly checks the file. You get a reminder if your last backup is over 7 days old.
 - **Works offline** and installs like an app on phones, tablets and PCs (it's a PWA).
 - **No tax / GST lines.** It's built for a local business: total = subtotal − discount, rounded to the nearest rupee (you can turn rounding off).
@@ -33,43 +34,58 @@ Keyboard shortcuts on the Billing screen:
 
 ---
 
-## Deploy for free (about 5 minutes)
+## Deploy for free on GitHub Pages (about 5 minutes)
 
-You need a free [GitHub](https://github.com) account, plus a free Netlify **or** Vercel account.
+You only need a free [GitHub](https://github.com) account. The app will live at
+`https://<your-username>.github.io/tikka-bites/`.
 
-### 1. Put the code on GitHub
+### 1. Create an empty repository on GitHub
 
-```bash
-# on GitHub, create an empty repository called "restobill" first, then:
-git remote add origin https://github.com/<your-username>/restobill.git
+On github.com, click **+ → New repository** and name it `tikka-bites`. Leave it **empty**:
+don't add a README, .gitignore or licence. Then click **Create repository**.
+
+### 2. Push the code (run these in the project folder)
+
+```powershell
+cd "G:\Billing system"
+git remote add origin https://github.com/<your-username>/tikka-bites.git
 git push -u origin main
 ```
 
-### 2. One-click deploy
+The first push opens a GitHub sign-in window. Sign in, and the push continues.
 
-Replace `<your-username>` in these links with your GitHub username (or edit this README
-after pushing, and the buttons will work for you):
+### 3. Turn on GitHub Pages (one time)
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/<your-username>/restobill)
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/<your-username>/restobill)
+In the repository, go to **Settings → Pages → Build and deployment → Source**, choose
+**GitHub Actions**, and save.
 
-**Netlify manually:**
-1. Go to *Add new site → Import an existing project → GitHub* and pick `restobill`.
-2. The build settings are read from `netlify.toml`, so just click **Deploy**.
+Then open the **Actions** tab. The **Deploy to GitHub Pages** workflow runs the tests, builds
+the app and publishes it, which takes about 1–2 minutes. If it ran before Pages was switched on
+and failed, click it and choose **Re-run all jobs**.
 
-**Vercel manually:**
-1. Go to *Add New… → Project* and import `restobill`.
-2. The settings are read from `vercel.json`, so just click **Deploy**.
+Your app is now live at `https://<your-username>.github.io/tikka-bites/`.
 
-Both config files set up:
-- the SPA fallback (every path serves `index.html`)
-- long caching for built files
-- strict security headers: Content-Security-Policy, X-Content-Type-Options, Referrer-Policy, X-Frame-Options and Permissions-Policy
+### Updating the live app later
 
-Every later `git push` redeploys automatically. Open devices then show a
+```powershell
+git add -A
+git commit -m "Describe what you changed"
+git push
+```
+
+Each push re-tests and republishes the app automatically. Open devices show a
 "New version ready — Reload" prompt, and never reload in the middle of a bill.
 
-### 3. Install it on the billing device
+### Alternative: Netlify or Vercel
+
+The same repository also deploys to Netlify or Vercel. Import it there; the settings are read
+from `netlify.toml` / `vercel.json`. Those hosts also send extra security headers that GitHub Pages
+can't (for example, blocking the app from being embedded in other sites).
+
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/<your-username>/tikka-bites)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/<your-username>/tikka-bites)
+
+### Install it on the billing device
 
 Open your site's URL, then:
 - **Android / Chrome:** tap ⋮ → *Install app*.
@@ -101,10 +117,11 @@ Everything lives in this browser's built-in database (IndexedDB), on this device
 ```bash
 npm install
 npm run dev          # dev server at http://localhost:5173
-npm test             # unit tests (Vitest)
+npm test             # unit tests (Vitest), incl. month/date boundaries in IST
 npm run e2e          # end-to-end tests (Playwright) against the production build
 npm run build        # type-check + build + fail if startup JS > 60 KB gzipped
 npm run serve:dist   # serve dist/ with the exact production security headers
+npm run serve:dist -- 4176 --pages /tikka-bites/   # imitate GitHub Pages (sub-folder, no headers)
 npm run seed:50k     # make seed-50k.json (50,000 bills) to restore for load testing
 ```
 

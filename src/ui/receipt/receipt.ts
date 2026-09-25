@@ -3,8 +3,10 @@ import { formatINR } from '../../core/money';
 import { formatDateTime } from '../../core/dates';
 import type { Bill, ReceiptWidth, Settings } from '../../db/types';
 import { BUILT_IN_LOGO } from '../../db/db';
+import { assetUrl } from '../../assets';
 
 export const ORDER_LABEL = { 'dine-in': 'Dine-in', takeaway: 'Takeaway', delivery: 'Delivery' } as const;
+/** 'card' kept only so bills saved before Card was removed still print correctly. */
 export const PAYMENT_LABEL = { cash: 'Cash', upi: 'UPI', card: 'Card' } as const;
 
 /** Build the receipt DOM. Everything is set via textContent (XSS-safe). */
@@ -22,7 +24,7 @@ export function buildReceipt(bill: Bill, s: Settings, width: ReceiptWidth): HTML
     h(
       'header',
       { class: 'r-head' },
-      s.printLogo !== false ? h('img', { class: 'r-logo', attrs: { src: s.logoDataUrl ?? BUILT_IN_LOGO, alt: '', width: 300, height: 300 } }) : null,
+      s.printLogo !== false ? h('img', { class: 'r-logo', attrs: { src: s.logoDataUrl ?? assetUrl(BUILT_IN_LOGO), alt: '', width: 300, height: 300 } }) : null,
       h('div', { class: 'r-name', text: s.name }),
       s.address ? h('div', { class: 'r-addr', text: s.address }) : null,
       s.phone ? h('div', { class: 'r-addr', text: `Ph: ${s.phone}` }) : null,

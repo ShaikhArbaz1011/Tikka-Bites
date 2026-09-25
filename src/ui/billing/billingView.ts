@@ -52,7 +52,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
   const discError = h('p', { class: 'field-error', attrs: { hidden: true, id: 'disc-err' } });
   discInput.setAttribute('aria-describedby', 'disc-err');
   const customer = textInput({ maxlength: v.LIMITS.customerName, placeholder: 'Customer name (optional)', 'aria-label': 'Customer name', value: cart.data.customerName });
-  const payment = segmented('payment', 'Payment mode', [['cash', 'Cash'], ['upi', 'UPI'], ['card', 'Card']], cart.data.paymentMode);
+  const payment = segmented('payment', 'Payment mode', [['cash', 'Cash'], ['upi', 'UPI']], cart.data.paymentMode);
 
   const tSubtotal = h('dd', {});
   const tDiscount = h('dd', {});

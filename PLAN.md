@@ -27,6 +27,18 @@ services. All data lives in the browser (IndexedDB). Deploys free on Netlify or 
   - For dishes without a photo: food artwork cropped from the menu card.
   - `Dish.image` is either a built-in path or an uploaded data URL (validated in `core/validate.ts#isDishImage`).
 
+## 0b. Changes requested after launch
+
+- **Payment:** Cash / UPI only. Old bills marked "card" stay readable and count in totals, and old backups still restore.
+- **Export:** Excel `.xlsx` only (see §5.5). CSV was removed.
+- **Dates:** everything uses the device's local time (IST).
+  - `tests/unit/month.test.ts` runs in `Asia/Kolkata` and covers 23:59 on the 31st vs 00:00 on the 1st, 00:30 IST (which is the previous day in UTC), year end, leap day, weeks spanning two months, void across months, and Excel dates.
+  - `tests/e2e/month.spec.ts` drives the real app with the browser clock set around midnight.
+- **Hosting:** the build uses a relative base (`./`), so the same build works on Netlify/Vercel (site root) and **GitHub Pages** (`/<repo>/`).
+  - `.github/workflows/deploy.yml` tests, builds and publishes on every push to `main`.
+  - Pages can't send headers, so the CSP is also injected as a `<meta>` tag at build time.
+  - `npm run serve:dist -- 4176 --pages /repo/` imitates Pages locally.
+
 ## 1. Design source
 
 `/design` does not exist in the repo, and the frontend-design plugin is not
@@ -60,7 +72,7 @@ layout CSS change; the logic stays the same.
 │  ui/billing      ui/menu       ui/settings    ui/reports (lazy)  │
 │     │               │              │               │             │
 │     └──────► core/ (pure functions: money, totals, billNo,         │
-│               shuffleBag, topK, validate, csv, dates)            │
+│               shuffleBag, topK, validate, xlsx, dates)           │
 │                     │                                            │
 │                     ▼                                            │
 │               db/ repositories  ──►  IndexedDB (via `idb`)       │
@@ -84,7 +96,7 @@ layout CSS change; the logic stays the same.
 |---|---|---|
 | `idb` | ~1.2 KB | Required by spec. Gives a Promise-based IndexedDB API. |
 
-That is the only runtime dependency. Everything else (charts, CSV, shuffle, top-K, image
+That is the only runtime dependency. Everything else (charts, Excel export, shuffle, top-K, image
 resize, service worker) is hand-written.
 
 ### Dev-only dependencies (these never ship to users)
@@ -139,7 +151,7 @@ Indexes: `category`, `active`.
   orderType: 'dine-in' | 'takeaway' | 'delivery',
   tableNo?: string,
   customerName?: string,
-  paymentMode: 'cash' | 'upi' | 'card',
+  paymentMode: 'cash' | 'upi',     // 'card' only on bills saved before Card was removed
   discount: { kind: 'flat', paise } | { kind: 'pct', bp },
   subtotalPaise, discountPaise,
   roundOffPaise,              // see Open Question 2
@@ -166,7 +178,7 @@ Indexes: `createdAt`, `monthKey`, `status`, `totalPaise`.
 {
   monthKey, billCount, voidCount,
   revenuePaise, discountPaise, itemsSold,
-  byPayment:   { cash: {count, paise}, upi: {...}, card: {...} },
+  byPayment:   { cash: {count, paise}, upi: {...} },
   byOrderType: { 'dine-in': {...}, takeaway: {...}, delivery: {...} },
   byCategory:  { [category]: { qty, paise } },
   byDish:      { [menuId]: { name, qty, paise } },
@@ -252,7 +264,7 @@ naturally, because a new `monthKey` starts at 0.
 **Order details**
 - Order type segmented control: Dine-in shows a Table no. field. Takeaway and Delivery do not.
 - Discount toggle: ₹ or %, with its own input.
-- Payment: Cash / UPI / Card. Customer name is optional.
+- Payment: Cash / UPI (Card was removed at the owner's request). Customer name is optional.
 
 **Totals and saving**
 - The running total updates live. Updates are batched through `requestAnimationFrame`.
@@ -383,12 +395,12 @@ The receipt is rendered with DOM APIs into `#print-root`.
 - A "Load more" button plus an IntersectionObserver.
 - Each row: View / Reprint / Void (the reason is required, in a modal).
 
-**CSV export**
-- Exports the current filtered view: a bills sheet plus an optional line-items sheet as a second file.
-- Starts with a UTF-8 BOM (a marker so Excel shows ₹ correctly).
-- Values are quoted per RFC 4180.
-- **Guards against CSV injection:** cells starting with `= + - @` are prefixed with `'`.
-- Downloaded via a Blob and an object URL.
+**Excel export (the only export format)**
+- One real `.xlsx` workbook for the current filtered view, with four sheets: **Summary** (period, filters, totals), **Bills**, **Items** and **Dish Sales**.
+- It's written by a hand-made writer in `core/xlsx.ts`: the XML parts are zipped with CRC32, using deflate via `CompressionStream` where available. No library is needed.
+- **Dates and times are real Excel date/time values** in local time (IST), shown as `dd-mm-yyyy` / `hh:mm`, so Excel never misreads them. Money cells use a `₹#,##0.00` number format.
+- Text is written as inline strings, never formulas, so there is no formula-injection risk.
+- Header rows are frozen with auto-filter. Sheets over Excel's 1,048,576-row limit split into "(2)", "(3)" and so on.
 
 ### 5.6 Settings and data safety (`#/settings`)
 
@@ -508,7 +520,7 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 │  ├─ sw.ts
 │  ├─ styles/  tokens.css  base.css  layout.css  components.css  print.css
 │  ├─ core/    money.ts totals.ts billNo.ts shuffleBag.ts topK.ts dates.ts
-│  │           csv.ts validate.ts image.ts debounce.ts
+│  │           xlsx.ts validate.ts image.ts debounce.ts
 │  ├─ db/      db.ts (open + upgrade) types.ts menuRepo.ts billRepo.ts
 │  │           statsRepo.ts settingsRepo.ts linesRepo.ts backup.ts
 │  ├─ data/    cheesyLines.ts  sampleMenu.ts
@@ -523,7 +535,7 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 │                     charts.ts billList.ts exportCsv.ts
 └─ tests/
    ├─ unit/  money, totals, billNo, stats(aggregation), topK, shuffleBag,
-   │         validate(import), csv, noInnerHTML
+   │         validate(import), xlsx, month (IST boundaries), noInnerHTML
    └─ e2e/   flow.spec.ts  screenshots.spec.ts
 ```
 
@@ -534,13 +546,13 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 | # | Phase | Output | Checks |
 |---|---|---|---|
 | 0 | **Scaffold** | `git init`, Vite + TS strict, folders, CLAUDE.md, header configs, app shell (nav + router + empty screens), size-check script | build passes, screenshots 375/1280 |
-| 1 | **Core logic** | money, totals, discount, billNo, shuffle bag, top-K, validators, CSV | Vitest green |
+| 1 | **Core logic** | money, totals, discount, billNo, shuffle bag, top-K, validators, export | Vitest green |
 | 2 | **Database** | schema, repos, `saveBill` / `voidBill` transactions, `monthlyStats` updates | Vitest + fake-indexeddb, including a concurrent-save no-duplicate test |
 | 3 | **Menu management** | CRUD, soft delete, search, sample menu | screenshots + console clean |
 | 4 | **Billing** | grid, cart, order type, discount, payment, shortcuts, draft autosave | screenshots + console clean |
 | 5 | **Receipt & print** | 58/80/A4 print CSS, preview, WhatsApp, reprint, logo | print-emulation screenshots |
 | 6 | **Settings & data safety** | details, logo upload, lines editor, backup/restore + validation, persist, reminder banner | Vitest (import validation) + screenshots |
-| 7 | **Reports (lazy)** | filters, KPIs, SVG charts, top/least-sold, MoM, void, pagination, CSV | screenshots + aggregation tests |
+| 7 | **Reports (lazy)** | filters, KPIs, SVG charts, top/least-sold, MoM, void, pagination, Excel export | screenshots + aggregation tests |
 | 8 | **PWA** | manifest, service worker, update toast | offline reload test in Playwright |
 | 9 | **Performance & hardening** | 50k seed, timings, Lighthouse, bundle budget, a11y pass | Lighthouse ≥ 95 ×3, size ≤ 60 KB |
 | 10 | **E2E & deploy** | Playwright full flow, README with 1-click deploy buttons | all tests green |

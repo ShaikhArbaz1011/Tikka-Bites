@@ -7,7 +7,8 @@ export default defineConfig({
   timeout: 60_000,
   fullyParallel: true,
   reporter: [['list']],
-  use: { baseURL: 'http://localhost:4174', trace: 'retain-on-failure' },
+  // The shop is in India: run the browser on IST so dates match the counter.
+  use: { baseURL: 'http://localhost:4174', trace: 'retain-on-failure', timezoneId: 'Asia/Kolkata', locale: 'en-IN' },
   webServer: {
     command: 'npm run build && node scripts/serve-dist.mjs 4174',
     url: 'http://localhost:4174',

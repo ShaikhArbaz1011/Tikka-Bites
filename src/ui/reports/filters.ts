@@ -1,6 +1,6 @@
 import { h } from '../dom';
 import { select, textInput } from '../components/form';
-import { presetRange, customRange, monthKeyRange, formatMonthKey, formatDateISO, type Preset, type Range } from '../../core/dates';
+import { presetRange, customRange, monthKeyRange, formatMonthKey, formatDateISO, formatDateTime, type Preset, type Range } from '../../core/dates';
 import { monthKeyOf } from '../../core/billNo';
 import { parseRupees } from '../../core/money';
 import { debounce } from '../../core/debounce';
@@ -37,7 +37,7 @@ export function filterBar(categories: string[], onChange: () => void): FilterBar
   const customWrap = h('div', { class: 'filter-extra range-inputs', attrs: { hidden: true } }, from, h('span', { class: 'muted', text: 'to' }), to);
 
   const category = select([['', 'All categories'], ...categories.map((c): [string, string] => [c, c])], '', { 'aria-label': 'Category' });
-  const payment = select([['', 'All payments'], ['cash', 'Cash'], ['upi', 'UPI'], ['card', 'Card']], '', { 'aria-label': 'Payment mode' });
+  const payment = select([['', 'All payments'], ['cash', 'Cash'], ['upi', 'UPI']], '', { 'aria-label': 'Payment mode' });
   const orderType = select([['', 'All order types'], ['dine-in', 'Dine-in'], ['takeaway', 'Takeaway'], ['delivery', 'Delivery']], '', { 'aria-label': 'Order type' });
   const food = select([['', 'Veg & non-veg'], ['veg', 'Veg only'], ['nonveg', 'Non-veg only']], '', { 'aria-label': 'Food type' });
   const min = textInput({ inputmode: 'decimal', placeholder: 'Min ₹', 'aria-label': 'Minimum bill amount' });
@@ -89,7 +89,7 @@ export function filterBar(categories: string[], onChange: () => void): FilterBar
       label = formatMonthKey(key);
     } else if (p === 'custom') {
       range = customRange(from.value, to.value) ?? presetRange('today', now);
-      label = `${from.value} → ${to.value}`;
+      label = `${formatDateTime(range.start).slice(0, 10)} – ${formatDateTime(range.end - 1).slice(0, 10)}`;
     } else {
       range = presetRange(p, Date.now());
       label = p === 'month' || p === 'lastMonth' ? `${PRESET_LABEL[p]} · ${formatMonthKey(monthKeyOf(range.start))}` : PRESET_LABEL[p];

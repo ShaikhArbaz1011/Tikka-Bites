@@ -104,6 +104,7 @@ describe('saveBill', () => {
     await expect(saveBill(draft({ items: [{ menuId: paneer, qty: 1.5 }] }), SEP)).rejects.toThrow('Quantity');
     await expect(saveBill(draft({ items: [{ menuId: paneer, qty: 1000 }] }), SEP)).rejects.toThrow('Quantity');
     await expect(saveBill(draft({ paymentMode: 'bitcoin' as never }), SEP)).rejects.toThrow('payment');
+    await expect(saveBill(draft({ paymentMode: 'card' as never }), SEP)).rejects.toThrow('payment'); // Card removed: Cash / UPI only
     await expect(saveBill(draft({ discount: { kind: 'pct', bp: 10001 } }), SEP)).rejects.toThrow('discount');
   });
 
@@ -162,7 +163,7 @@ describe('monthly stats (pre-aggregation) and void', () => {
   it('applyBill +1 then −1 returns to empty', () => {
     const s = emptyStats();
     const bill = {
-      billNo: 'X', createdAt: SEP, monthKey: '202609', hour: 13, weekday: 5, orderType: 'takeaway', paymentMode: 'card',
+      billNo: 'X', createdAt: SEP, monthKey: '202609', hour: 13, weekday: 5, orderType: 'takeaway', paymentMode: 'upi',
       discount: NO_DISCOUNT, subtotalPaise: 100, discountPaise: 0, roundOffPaise: 0, totalPaise: 100, itemCount: 1,
       categories: ['A'], hasVeg: true, hasNonVeg: false, cheesyLine: '', status: 'paid',
       items: [{ menuId: 1, name: 'x', category: 'A', isVeg: true, unitPaise: 100, qty: 1, linePaise: 100 }],

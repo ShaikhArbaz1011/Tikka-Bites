@@ -33,14 +33,16 @@ describe('parseDraft', () => {
       {
         lines: [{ menuId: 1, qty: 2 }, { menuId: 99, qty: 1 }, { menuId: 2, qty: 1.5 }, 'junk'],
         orderType: 'spaceship',
-        paymentMode: 'card',
+        paymentMode: 'upi',
         tableNo: 'x'.repeat(50),
         discountKind: 'pct',
         discountInput: '10',
       },
       new Set([1, 2]),
     );
-    expect(d).toMatchObject({ lines: [{ menuId: 1, qty: 2 }], orderType: 'dine-in', paymentMode: 'card', discountKind: 'pct' });
+    expect(d).toMatchObject({ lines: [{ menuId: 1, qty: 2 }], orderType: 'dine-in', paymentMode: 'upi', discountKind: 'pct' });
+    // A draft saved when Card existed falls back to Cash.
+    expect(parseDraft({ paymentMode: 'card' }, new Set())!.paymentMode).toBe('cash');
     expect(d!.tableNo.length).toBe(10);
     expect(parseDraft(null, new Set())).toBeNull();
   });

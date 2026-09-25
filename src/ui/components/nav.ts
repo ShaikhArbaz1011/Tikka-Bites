@@ -1,4 +1,5 @@
 import { h } from '../dom';
+import { assetUrl } from '../../assets';
 import { icon, type IconName } from './icons';
 import { ROUTES, type RouteName } from '../../router';
 import { getThemePref, setThemePref, type ThemePref } from '../../theme';
@@ -28,8 +29,8 @@ export function renderNav(nav: HTMLElement, topbar: HTMLElement): (active: Route
   const brand = h(
     'a',
     { class: 'nav-brand', attrs: { href: '#/billing', 'aria-label': 'Tikka Bites home' } },
-    h('img', { class: 'brand-round', attrs: { src: '/brand/logo-round-96.webp', alt: '', width: 48, height: 48 } }),
-    h('span', { class: 'brand-wide-wrap' }, h('img', { class: 'brand-wide', attrs: { src: '/brand/logo-wide.webp', alt: '', width: 491, height: 120 } })),
+    h('img', { class: 'brand-round', attrs: { src: assetUrl('/brand/logo-round-96.webp'), alt: '', width: 48, height: 48 } }),
+    h('span', { class: 'brand-wide-wrap' }, h('img', { class: 'brand-wide', attrs: { src: assetUrl('/brand/logo-wide.webp'), alt: '', width: 491, height: 120 } })),
   );
   const list = h('ul', { class: 'nav-list' });
   for (const [name, r] of Object.entries(ROUTES) as [RouteName, (typeof ROUTES)[RouteName]][]) {
@@ -40,7 +41,7 @@ export function renderNav(nav: HTMLElement, topbar: HTMLElement): (active: Route
   nav.replaceChildren(brand, list, h('div', { class: 'nav-foot' }, themeToggle('nav-theme')));
 
   topbar.replaceChildren(
-    h('img', { class: 'topbar-logo', attrs: { src: '/brand/logo-round-96.webp', alt: '', width: 36, height: 36 } }),
+    h('img', { class: 'topbar-logo', attrs: { src: assetUrl('/brand/logo-round-96.webp'), alt: '', width: 36, height: 36 } }),
     h('span', { class: 'topbar-name' }, h('span', { class: 'tb-white', text: 'TIKKA ' }), h('span', { class: 'tb-red', text: 'BITES' })),
     themeToggle('topbar-theme icon-only'),
   );

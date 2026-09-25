@@ -3,11 +3,14 @@ import type { Discount } from '../core/totals';
 import type { BagState } from '../core/shuffleBag';
 
 export type OrderType = 'dine-in' | 'takeaway' | 'delivery';
-export type PaymentMode = 'cash' | 'upi' | 'card';
+/** Payment modes offered for new bills. */
+export type PaymentMode = 'cash' | 'upi';
+/** Stored bills may also carry 'card' from before Card was removed; they stay readable. */
+export type StoredPaymentMode = PaymentMode | 'card';
 export type ReceiptWidth = '58' | '80' | 'A4';
 
 export const ORDER_TYPES: readonly OrderType[] = ['dine-in', 'takeaway', 'delivery'];
-export const PAYMENT_MODES: readonly PaymentMode[] = ['cash', 'upi', 'card'];
+export const PAYMENT_MODES: readonly PaymentMode[] = ['cash', 'upi'];
 export const RECEIPT_WIDTHS: readonly ReceiptWidth[] = ['58', '80', 'A4'];
 
 export interface Dish {
@@ -46,7 +49,7 @@ export interface Bill {
   orderType: OrderType;
   tableNo?: string;
   customerName?: string;
-  paymentMode: PaymentMode;
+  paymentMode: StoredPaymentMode;
   discount: Discount;
   subtotalPaise: Paise;
   discountPaise: Paise;

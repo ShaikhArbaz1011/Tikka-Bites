@@ -24,7 +24,7 @@ beforeEach(async () => {
   kulfi = (await addDish({ name: 'Kulfi', category: 'Desserts', pricePaise: 7500, isVeg: true, active: true })).id; // never sold
   await saveBill({ items: [{ menuId: tikka, qty: 2 }, { menuId: naan, qty: 4 }], orderType: 'dine-in', paymentMode: 'upi', discount: NO_DISCOUNT }, at(3));
   await saveBill({ items: [{ menuId: fish, qty: 1 }], orderType: 'delivery', paymentMode: 'cash', discount: NO_DISCOUNT }, at(4, 20));
-  await saveBill({ items: [{ menuId: naan, qty: 10 }], orderType: 'takeaway', paymentMode: 'card', discount: NO_DISCOUNT }, at(5, 21));
+  await saveBill({ items: [{ menuId: naan, qty: 10 }], orderType: 'takeaway', paymentMode: 'upi', discount: NO_DISCOUNT }, at(5, 21));
 });
 
 const base: ReportFilter = { range: SEP, showVoid: false };

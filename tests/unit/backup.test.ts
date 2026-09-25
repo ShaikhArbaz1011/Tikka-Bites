@@ -15,7 +15,7 @@ async function seed() {
   const a = await addDish({ name: 'Dosa', category: 'South', pricePaise: 12050, isVeg: true, active: true });
   const b = await addDish({ name: 'Fish Fry', category: 'Seafood', pricePaise: 34000, isVeg: false, active: true });
   await saveBill({ items: [{ menuId: a.id, qty: 3 }], orderType: 'takeaway', paymentMode: 'cash', discount: NO_DISCOUNT }, SEP);
-  const v = await saveBill({ items: [{ menuId: b.id, qty: 1 }], orderType: 'dine-in', tableNo: '4', paymentMode: 'card', discount: { kind: 'pct', bp: 500 } }, SEP + 1000);
+  const v = await saveBill({ items: [{ menuId: b.id, qty: 1 }], orderType: 'dine-in', tableNo: '4', paymentMode: 'upi', discount: { kind: 'pct', bp: 500 } }, SEP + 1000);
   await saveBill({ items: [{ menuId: a.id, qty: 1 }, { menuId: b.id, qty: 2 }], orderType: 'delivery', customerName: 'Asha', paymentMode: 'upi', discount: { kind: 'flat', paise: 2000 } }, SEP + 2000);
   await voidBill(v.billNo, 'Wrong table');
   await saveSettings({ name: 'Dosa Corner', address: '12 MG Road', phone: '98765 43210' });
@@ -84,6 +84,13 @@ describe('strict import validation', () => {
     const r = await mutate(fn);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(expected);
+  });
+
+  it('still restores old backups whose bills were paid by card', async () => {
+    await seed();
+    const j = await backupJson();
+    (j as { bills: { paymentMode: string }[] }).bills[0]!.paymentMode = 'card';
+    expect(validateBackup(j).ok).toBe(true);
   });
 
   it('rejects non-objects', () => {

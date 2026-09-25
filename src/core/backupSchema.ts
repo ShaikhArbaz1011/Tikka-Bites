@@ -149,6 +149,7 @@ function checkBill(v: unknown, p: string): string {
   const items = arr(o['items'], `${p}.items`, 500).map((it, i) => checkItem(it, `${p}.items[${i}]`));
   if (!items.length) fail(`${p}.items`, 'must have at least one item');
   oneOf(o['orderType'], `${p}.orderType`, ['dine-in', 'takeaway', 'delivery'] as const);
+  // 'card' is accepted only for bills saved before Card was removed (new bills are Cash/UPI).
   oneOf(o['paymentMode'], `${p}.paymentMode`, ['cash', 'upi', 'card'] as const);
   optStr(o, 'tableNo', p, LIMITS.tableNo);
   optStr(o, 'customerName', p, LIMITS.customerName);

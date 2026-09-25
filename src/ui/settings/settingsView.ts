@@ -12,6 +12,7 @@ import { formatDateTime } from '../../core/dates';
 import * as v from '../../core/validate';
 import type { ReceiptWidth } from '../../db/types';
 import { BUILT_IN_LOGO } from '../../db/db';
+import { assetUrl } from '../../assets';
 import { getThemePref, setThemePref, type ThemePref } from '../../theme';
 
 function section(title: string, desc: string, ...children: Node[]): HTMLElement {
@@ -71,7 +72,7 @@ export async function mount(root: HTMLElement): Promise<() => void> {
   });
   let logo = s.logoDataUrl;
   const renderLogo = () => {
-    replaceChildren(logoBox, h('img', { class: 'logo-img', attrs: { src: logo ?? BUILT_IN_LOGO, alt: logo ? 'Uploaded logo' : 'Tikka Bites logo' } }));
+    replaceChildren(logoBox, h('img', { class: 'logo-img', attrs: { src: logo ?? assetUrl(BUILT_IN_LOGO), alt: logo ? 'Uploaded logo' : 'Tikka Bites logo' } }));
     removeBtn.hidden = !logo;
   };
   fileInput.addEventListener('change', async () => {
