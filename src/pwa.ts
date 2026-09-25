@@ -6,8 +6,14 @@ export function registerServiceWorker(): void {
   window.addEventListener('load', async () => {
     try {
       const reg = await navigator.serviceWorker.register('/sw.js');
+      // Reload only when the user accepted an update, never on the first install
+      // (clients.claim() also fires controllerchange, which must not reload mid-bill).
+      let accepted = false;
       const offer = (worker: ServiceWorker) =>
-        actionToast('A new version is ready.', 'Reload', () => worker.postMessage('SKIP_WAITING'));
+        actionToast('A new version is ready.', 'Reload', () => {
+          accepted = true;
+          worker.postMessage('SKIP_WAITING');
+        });
       if (reg.waiting && navigator.serviceWorker.controller) offer(reg.waiting);
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;
@@ -17,7 +23,7 @@ export function registerServiceWorker(): void {
       });
       let reloaded = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (reloaded) return;
+        if (reloaded || !accepted) return;
         reloaded = true;
         location.reload();
       });
