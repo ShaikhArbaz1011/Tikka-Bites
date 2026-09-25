@@ -4,7 +4,8 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { resetDBForTests, getDB } from '../../src/db/db';
 import { saveBill, forEachBill } from '../../src/db/billRepo';
 import { addDish, listMenu } from '../../src/db/menuRepo';
-import { runReport, dishRankings, billMatches, pctChange, type ReportFilter } from '../../src/ui/reports/query';
+import { runReport, dishRankings, billMatches, pctChange, wholeMonthsIn, type ReportFilter } from '../../src/ui/reports/query';
+import { applyBill, emptyStats } from '../../src/core/stats';
 import { monthRange } from '../../src/core/dates';
 import { NO_DISCOUNT } from '../../src/core/totals';
 import type { Bill } from '../../src/db/types';
@@ -59,6 +60,30 @@ describe('runReport', () => {
     const nv = await runReport({ ...base, food: 'nonveg' });
     expect(nv.stats.billCount).toBe(1);
     expect(nv.stats.byDish[String(fish)]!.qty).toBe(1);
+  });
+});
+
+describe('multi-month ranges', () => {
+  it('splits a range into whole months plus partial edges', () => {
+    const r = { start: +new Date(2026, 6, 15), end: +new Date(2026, 8, 10) };
+    expect(wholeMonthsIn(r)).toEqual({ keys: ['202608'], edges: [{ start: r.start, end: +new Date(2026, 7, 1) }, { start: +new Date(2026, 8, 1), end: r.end }] });
+    expect(wholeMonthsIn(monthRange(2026, 8)).keys).toEqual(['202609']);
+    const inside = { start: +new Date(2026, 8, 2), end: +new Date(2026, 8, 20) };
+    expect(wholeMonthsIn(inside)).toEqual({ keys: [], edges: [inside] });
+  });
+
+  it('whole months from summaries + scanned edges equal a full scan', async () => {
+    await saveBill({ items: [{ menuId: fish, qty: 2 }], orderType: 'takeaway', paymentMode: 'upi', discount: NO_DISCOUNT }, +new Date(2026, 7, 20, 12));
+    await saveBill({ items: [{ menuId: naan, qty: 1 }], orderType: 'dine-in', paymentMode: 'cash', discount: NO_DISCOUNT }, +new Date(2026, 6, 28, 19));
+    const range = { start: +new Date(2026, 6, 25), end: +new Date(2026, 8, 4) }; // Jul 25 → Sep 3
+    const r = await runReport({ range, showVoid: false });
+    const full = emptyStats();
+    await forEachBill(range, (b) => applyBill(full, b, 1));
+    expect(r.stats.billCount).toBe(full.billCount);
+    expect(r.stats.revenuePaise).toBe(full.revenuePaise);
+    expect(r.stats.byDish).toEqual(full.byDish);
+    expect(r.stats.byHour).toEqual(full.byHour);
+    expect(r.scanned).toBeLessThan(5); // August came from its summary
   });
 });
 

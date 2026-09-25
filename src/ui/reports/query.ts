@@ -4,7 +4,8 @@
  * else streams the bills in the date range once and aggregates on the fly.
  */
 import { forEachBill, getMonthlyStats } from '../../db/billRepo';
-import { applyBill, emptyStats } from '../../core/stats';
+import { applyBill, emptyStats, mergeStats } from '../../core/stats';
+import { monthKeyOf } from '../../core/billNo';
 import { rangeIsWholeMonth, prevMonthKey, type Range } from '../../core/dates';
 import { topK, bottomK } from '../../core/topK';
 import type { Bill, BillItem, Dish, OrderType, PaymentMode, Stats } from '../../db/types';
@@ -64,6 +65,27 @@ export async function runReport(f: ReportFilter): Promise<ReportData> {
   const itemFilter = itemFilterFor(f);
   let voided = 0;
   let scanned = 0;
+
+  // Unfiltered multi-month range: whole months come from monthlyStats,
+  // and only the partial months at either edge are scanned.
+  if (!hasBillFilters(f)) {
+    const months = wholeMonthsIn(f.range);
+    if (months.keys.length) {
+      const all = await Promise.all(months.keys.map((k) => getMonthlyStats(k)));
+      for (const m of all) if (m) mergeStats(stats, m);
+      voided = stats.voidCount;
+      for (const edge of months.edges) {
+        await forEachBill(edge, (b) => {
+          scanned++;
+          if (b.status === 'void') voided++;
+          else applyBill(stats, b, 1);
+        });
+      }
+      stats.voidCount = voided;
+      return { stats, voided, source: scanned ? 'scan' : 'summary', scanned, ms: performance.now() - t0 };
+    }
+  }
+
   await forEachBill(f.range, (b) => {
     scanned++;
     if (!billMatches(b, f)) return;
@@ -72,6 +94,28 @@ export async function runReport(f: ReportFilter): Promise<ReportData> {
   });
   stats.voidCount = voided;
   return { stats, voided, source: 'scan', scanned, ms: performance.now() - t0 };
+}
+
+/** Split a range into whole calendar months (by key) plus partial edge ranges. */
+export function wholeMonthsIn(r: Range): { keys: string[]; edges: Range[] } {
+  const keys: string[] = [];
+  const s = new Date(r.start);
+  let cursor = new Date(s.getFullYear(), s.getMonth(), 1);
+  if (+cursor < r.start) cursor = new Date(s.getFullYear(), s.getMonth() + 1, 1);
+  const firstFull = +cursor;
+  let lastFullEnd = firstFull;
+  for (;;) {
+    const next = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    if (+next > r.end) break;
+    keys.push(monthKeyOf(cursor));
+    lastFullEnd = +next;
+    cursor = next;
+  }
+  if (!keys.length) return { keys, edges: [r] };
+  const edges: Range[] = [];
+  if (r.start < firstFull) edges.push({ start: r.start, end: firstFull });
+  if (lastFullEnd < r.end) edges.push({ start: lastFullEnd, end: r.end });
+  return { keys, edges };
 }
 
 export interface DishRank {

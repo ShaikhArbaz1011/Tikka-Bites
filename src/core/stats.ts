@@ -37,6 +37,42 @@ function pruneQty(map: Record<string, { qty: number; paise: number }>, key: stri
   if (e && e.qty === 0 && e.paise === 0) delete map[key];
 }
 
+/** Add `src` into `dst` (e.g. to combine several months' pre-aggregated stats). */
+export function mergeStats(dst: Stats, src: Stats): Stats {
+  dst.billCount += src.billCount;
+  dst.voidCount += src.voidCount;
+  dst.revenuePaise += src.revenuePaise;
+  dst.discountPaise += src.discountPaise;
+  dst.itemsSold += src.itemsSold;
+  for (const k of ['byPayment', 'byOrderType'] as const) {
+    for (const [key, v] of Object.entries(src[k])) {
+      const e = (dst[k][key] ??= { count: 0, paise: 0 });
+      e.count += v.count;
+      e.paise += v.paise;
+    }
+  }
+  for (const [key, v] of Object.entries(src.byCategory)) {
+    const e = (dst.byCategory[key] ??= { qty: 0, paise: 0 });
+    e.qty += v.qty;
+    e.paise += v.paise;
+  }
+  for (const [key, v] of Object.entries(src.byDish)) {
+    const e = (dst.byDish[key] ??= { name: v.name, qty: 0, paise: 0 });
+    e.qty += v.qty;
+    e.paise += v.paise;
+  }
+  src.byHour.forEach((v, i) => {
+    dst.byHour[i]!.count += v.count;
+    dst.byHour[i]!.paise += v.paise;
+  });
+  src.byWeekday.forEach((v, i) => {
+    dst.byWeekday[i]!.count += v.count;
+    dst.byWeekday[i]!.paise += v.paise;
+  });
+  for (const [day, p] of Object.entries(src.byDay)) dst.byDay[day] = (dst.byDay[day] ?? 0) + p;
+  return dst;
+}
+
 /**
  * Add (sign = 1) or remove (sign = −1) a paid bill's numbers.
  * `itemFilter` limits item-level figures (dishes, categories, items sold) to

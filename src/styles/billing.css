@@ -70,7 +70,7 @@
   bottom: calc(var(--bottom-nav-h) + 10px + env(safe-area-inset-bottom));
   display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 16px;
   border: 0; border-radius: var(--radius); background: var(--accent); color: var(--on-accent);
-  font-weight: 700; box-shadow: 0 8px 24px rgb(232 89 12 / 0.35);
+  font-weight: 700; box-shadow: 0 8px 24px rgb(194 65 12 / 0.35);
 }
 .cart-bar-total { font-variant-numeric: tabular-nums; }
 .cart-bar-cta { margin-left: auto; }

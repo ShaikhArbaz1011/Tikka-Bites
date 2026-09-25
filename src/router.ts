@@ -34,6 +34,8 @@ export function startRouter(root: HTMLElement, onChange: (r: RouteName) => void)
     const name = currentRoute();
     const my = ++token;
     onChange(name);
+    // Dialogs belong to the screen that opened them.
+    for (const d of document.querySelectorAll<HTMLDialogElement>('dialog[open]')) d.close();
     if (cleanup) cleanup();
     cleanup = undefined;
     root.replaceChildren();

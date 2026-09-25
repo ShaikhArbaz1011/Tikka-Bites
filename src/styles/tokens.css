@@ -5,8 +5,8 @@
   --border: #e6ded2;
   --text: #1f2933;
   --text-2: #5b6570;
-  --accent: #e8590c;
-  --accent-strong: #c2410c;
+  --accent: #c2410c;           /* 5.2:1 with white text (WCAG AA) */
+  --accent-strong: #9a3412;
   --accent-soft: #fff1e6;
   --on-accent: #ffffff;
   --veg: #16a34a;

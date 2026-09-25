@@ -16,7 +16,7 @@ services. All data lives in the browser (IndexedDB). Deploys free on Netlify or 
 available in this environment. I will design the look myself using these rules:
 
 - **Look:** warm and clean. Off-white background, a single saffron/orange accent
-  (`#E8590C`), dark slate text, and green/red dots for veg/non-veg (the Indian FSSAI convention).
+  (`#E8590C` for the logo; `#C2410C` for buttons so white text meets WCAG AA contrast), dark slate text, and green/red dots for veg/non-veg (the Indian FSSAI convention).
 - **Type:** the system font stack only. Web fonts would mean network calls and extra weight.
 - **Touch:** every tap target is at least 44×44 px, and the main actions are within thumb reach on phones.
 - **Layout:**
@@ -447,7 +447,7 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 - The search index is precomputed. The menu grid reuses card nodes instead of rebuilding them.
 - Reports use indexed range queries and the `monthlyStats` fast path. There is no full scan unless you filter across all time.
 - Reports are lazy-loaded. The CSS is small and there are no web fonts.
-- `scripts/seed-bills.ts` generates **50,000 realistic bills** for load testing.
+- `scripts/gen-backup.mjs` generates **50,000 realistic bills** as a backup file; restoring it load-tests the validator and import too.
 - I will measure:
   - save-bill latency
   - report load time
@@ -483,7 +483,8 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 │  └─ icons/ (icon-192.png, icon-512.png, maskable-512.png, favicon.svg)
 ├─ scripts/
 │  ├─ check-size.mjs        # fails build if JS > 60 KB gz
-│  └─ seed-bills.ts         # 50k-bill load test data
+│  ├─ gen-backup.mjs        # 50k-bill load-test backup (restore via Settings)
+│  └─ serve-dist.mjs        # serves dist/ with the real vercel.json headers
 ├─ src/
 │  ├─ main.ts               # bootstrap, router, SW registration, persist()
 │  ├─ router.ts

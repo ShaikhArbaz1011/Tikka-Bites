@@ -41,7 +41,7 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 ## Performance
 - Use event delegation for lists and grids, and batch DOM writes with `requestAnimationFrame`.
 - Reports use indexed range queries and the `monthlyStats` fast path. Never load all bills into memory.
-- The app must stay smooth with 50,000+ bills. Use `scripts/seed-bills.ts` to test that.
+- The app must stay smooth with 50,000+ bills. Use `scripts/gen-backup.mjs` (restore the file in Settings) to test that.
 
 ## Commands
 - `npm run dev`: dev server

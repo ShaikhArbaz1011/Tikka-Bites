@@ -29,7 +29,7 @@ export async function showReceipt(bill: Bill, opts: { autoPrint?: boolean } = {}
   const s = await getSettings();
   let width: ReceiptWidth = s.receiptWidth;
 
-  const preview = h('div', { class: 'receipt-preview' });
+  const preview = h('div', { class: 'receipt-preview', attrs: { tabindex: 0, role: 'region', 'aria-label': 'Receipt preview' } });
   const render = () => {
     replaceChildren(preview, buildReceipt(bill, s, width));
     preparePrint(bill, s, width);

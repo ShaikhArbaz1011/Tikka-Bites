@@ -97,6 +97,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     icon('cart'), barCount, barTotal, h('span', { class: 'cart-bar-cta', text: 'View bill →' }));
 
   root.append(
+    h('h1', { class: 'visually-hidden', text: 'Billing' }),
     h('div', { class: 'billing' },
       h('section', { class: 'bill-menu', attrs: { 'aria-label': 'Menu' } },
         h('div', { class: 'search-wrap' }, icon('search', 18), search),
