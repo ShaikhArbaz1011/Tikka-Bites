@@ -1,0 +1,117 @@
+You are a senior full-stack engineer. Build a production-grade, single-page
+restaurant BILLING web app that deploys FREE on Netlify or Vercel.
+
+=== WORKING RULES ===
+- First, read /design (screenshots/exports from Claude Design). Match its layout,
+  colors, and spacing. If /design is empty, use the frontend-design plugin to
+  create a clean, modern, touch-friendly look.
+- Before writing code: write a PLAN.md (architecture, data model, file tree,
+  phases). Also write a CLAUDE.md with the project rules. Wait for my approval.
+- Build in phases. Commit after each phase with a clear message.
+- After every UI phase, use the Playwright MCP to open the dev server and take
+  screenshots at 375px (phone) and 1280px (desktop). Check the console for errors.
+  Fix what looks broken before moving on.
+- Whenever you use a technical term in your summaries to me, add a short plain
+  explanation in brackets.
+
+=== HARD CONSTRAINTS ===
+- NO login page, NO accounts, NO paid services, NO server/database to host.
+- All data stays in the browser using IndexedDB (a built-in browser database),
+  via the tiny `idb` wrapper. No other runtime libraries unless justified in PLAN.md.
+- Stack: Vite + vanilla TypeScript (no React). Keep the JS bundle under 60 KB
+  gzipped (compressed). Lazy-load (load only when opened) the Reports screen.
+- Must work offline as a PWA (installable web app with a small service worker).
+- Store ALL money as integers in paise (1 ₹ = 100 paise) to avoid decimal
+  rounding bugs. Only format to ₹ when displaying.
+
+=== FEATURE 1: MENU MANAGEMENT ===
+- Add, edit, and disable dishes with these fields: name, category, price, veg/non-veg,
+  active flag. Never hard-delete a dish that appears in past bills (use soft delete).
+- Show menu items as a searchable grid. Search is debounced (waits ~150ms after
+  typing) and uses a precomputed lowercase index.
+
+=== FEATURE 2: BILLING ===
+- Tap a dish to add it; use +/- for quantity (integer 1–999). Show a running total live.
+- Order type: Dine-in (table no.) / Takeaway / Delivery.
+- Discount: flat ₹ or %. Tax: configurable GST % (split into CGST/SGST).
+- Payment mode: Cash / UPI / Card. Customer name is optional.
+- Bill number format: INV-YYYYMM-0001, auto-incrementing and resetting monthly.
+  Generate it inside an IndexedDB transaction so it can never duplicate.
+- Keyboard shortcuts for speed: "/" jumps to search, Enter adds the item,
+  Ctrl+P prints.
+
+=== FEATURE 3: RECEIPT ===
+- Include: restaurant LOGO, name, address, phone, GSTIN, bill no, date/time, items
+  table, subtotal, discount, taxes, grand total, payment mode.
+- Add one random CHEESY LINE at the bottom (e.g. "Our food is like our bill —
+  totally worth it 😋"). Ship 40 built-in lines and let me add or edit my own
+  in Settings. Pick lines with a "shuffle bag" (Fisher-Yates shuffle, then
+  take in order) so no line repeats until all have been used.
+- Logo upload: accept only PNG/JPG/WEBP up to 2 MB. Resize on a canvas to max 300px
+  and store it as a compressed data URL in IndexedDB.
+- Print with window.print() plus @media print CSS. Support these formats:
+  58mm and 80mm thermal paper, and A4. "Save as PDF" should work through the
+  print dialog.
+- Add a "Share on WhatsApp" button that sends a text summary via a wa.me link.
+- Reprinting an old bill must show the SAME cheesy line (store it with the bill).
+
+=== FEATURE 4: RECORDS & REPORTS ===
+Optimization: when a bill is saved, incrementally update a `monthlyStats` store
+(pre-aggregation, meaning totals are kept ready in advance). This lets reports read
+summaries instead of scanning every bill. Index bills by date for fast range queries.
+
+Filters:
+- Date presets: Today, Yesterday, This week, This month, Last month, Custom range
+- Month picker
+- Category, payment mode, order type, veg/non-veg
+- Amount range, and search by bill number
+
+Reports:
+- KPIs (key numbers): total revenue, number of bills, average bill value,
+  items sold, tax collected, discounts given
+- MOST SOLD dishes (top 10), ranked by quantity AND by revenue. Use a hash map
+  count + top-K selection (pick only the best K, without sorting everything)
+- Least-sold dishes (to spot what to remove from the menu)
+- Category-wise sales and payment-mode split
+- Peak hours (hour-of-day chart) and best days of the week
+- Month-over-month comparison with a % change
+- Void/cancel a bill with a mandatory reason. Voided bills are kept for the audit
+  trail (history record) but excluded from totals.
+- Draw charts as hand-written SVG (no chart library) to keep the bundle light.
+- Export any filtered view to CSV (opens in Excel).
+- Show a paginated bill list (loaded 50 at a time).
+
+=== FEATURE 5: SETTINGS & DATA SAFETY ===
+- Settings: restaurant details, logo, GST %, currency symbol, receipt width,
+  and the cheesy lines editor.
+- Backup: export everything as JSON. Restore: import JSON with strict schema
+  validation (check every field's type and range; reject anything unknown).
+- Call navigator.storage.persist() so the browser doesn't auto-delete data.
+- Show a gentle reminder banner if the last backup is older than 7 days.
+
+=== SECURITY ===
+- Never put user input into innerHTML. Use textContent / DOM APIs to prevent XSS
+  (cross-site scripting, i.e. injecting malicious code through text fields).
+- Validate every input (prices > 0, max lengths, integers only for quantity).
+- Add a strict Content-Security-Policy (browser rule allowing only our own
+  scripts) plus X-Content-Type-Options, Referrer-Policy, and X-Frame-Options:
+  in netlify.toml (Netlify's config file) and in vercel.json (Vercel's config file).
+- No external network calls, no analytics, no secrets in code.
+
+=== PERFORMANCE ===
+- Use event delegation (one click listener on a parent instead of hundreds).
+- Batch DOM updates with requestAnimationFrame.
+- Target a Lighthouse score (Google's page quality test) of 95+ for Performance,
+  Accessibility, and Best Practices.
+- It must work smoothly with 50,000+ bills stored.
+
+=== TESTING & DEPLOY ===
+- Vitest unit tests (automated checks of small functions) for: money math,
+  tax/discount rounding, bill numbering, aggregation, top-K, shuffle bag,
+  and import validation.
+- Playwright check of the full flow: add dishes → create bill → print preview
+  → verify it appears in the reports.
+- Deploy config: netlify.toml and vercel.json with SPA fallback (all routes serve
+  index.html), plus a README with 1-click deploy steps for both platforms.
+
+Start by reading /design, then show me PLAN.md.

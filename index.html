@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Offline restaurant billing — fast bills, receipts and reports. Your data stays on this device." />
+    <meta name="theme-color" content="#E8590C" />
+    <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml" />
+    <title>RestoBill</title>
+  </head>
+  <body>
+    <div id="app" class="app">
+      <nav id="nav" class="nav" aria-label="Main"></nav>
+      <main id="view" class="view" tabindex="-1"></main>
+    </div>
+    <div id="print-root" class="print-root" aria-hidden="true"></div>
+    <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
