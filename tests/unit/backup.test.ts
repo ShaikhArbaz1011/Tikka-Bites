@@ -46,12 +46,12 @@ describe('backup round trip', () => {
     await importBackup(v.backup);
 
     expect(await getMonthlyStats('202609')).toEqual(statsBefore);
-    expect((await getBill('INV-202609-0002'))!.status).toBe('void');
+    expect((await getBill('RCPT-202609-0002'))!.status).toBe('void');
     expect((await listMenu()).map((d) => d.name).sort()).toEqual(['Dosa', 'Fish Fry']);
     expect((await getSettings()).name).toBe('Dosa Corner');
     // Counter continues after the restored bills.
     const next = await saveBill({ items: [{ menuId: (await listMenu())[0]!.id, qty: 1 }], orderType: 'takeaway', paymentMode: 'cash', discount: NO_DISCOUNT }, SEP);
-    expect(next.billNo).toBe('INV-202609-0004');
+    expect(next.billNo).toBe('RCPT-202609-0004');
   });
 });
 
@@ -74,7 +74,7 @@ describe('strict import validation', () => {
     ['tampered total', (j) => (j.bills[0].totalPaise += 100), /does not add up/],
     ['tampered line amount', (j) => (j.bills[0].items[0].linePaise = 1), /price × quantity/],
     ['qty out of range', (j) => (j.bills[0].items[0].qty = 1000), /between 1 and 999/],
-    ['bad bill number', (j) => (j.bills[0].billNo = 'X-1'), /INV-YYYYMM-0001/],
+    ['bad bill number', (j) => (j.bills[0].billNo = 'X-1'), /RCPT-YYYYMM-0001/],
     ['duplicate bill number', (j) => j.bills.push(structuredClone(j.bills[0])), /duplicate bill number/],
     ['bad enum', (j) => (j.bills[0].paymentMode = 'crypto'), /must be one of/],
     ['string instead of bool', (j) => (j.menu[0].isVeg = 'yes'), /true or false/],
@@ -135,5 +135,22 @@ describe('dish photos (removed at the owner’s request)', () => {
     const v = validateBackup(j);
     expect(v.ok).toBe(false);
     if (!v.ok) expect(v.error).toMatch(/menu\[0\]\.image/);
+  });
+});
+
+describe('receipt numbers (RCPT-, formerly INV-)', () => {
+  it('restores bills an older version numbered INV-; new bills carry on the count as RCPT-', async () => {
+    await seed();
+    const j = (await backupJson()) as { bills: { billNo: string }[] };
+    for (const b of j.bills) b.billNo = b.billNo.replace(/^RCPT-/, 'INV-');
+    const v = validateBackup(j);
+    expect(v.ok).toBe(true);
+    globalThis.indexedDB = new IDBFactory();
+    await resetDBForTests();
+    if (!v.ok) return;
+    await importBackup(v.backup);
+    expect((await getBill('INV-202609-0002'))!.status).toBe('void');
+    const next = await saveBill({ items: [{ menuId: (await listMenu())[0]!.id, qty: 1 }], orderType: 'takeaway', paymentMode: 'cash', discount: NO_DISCOUNT }, SEP);
+    expect(next.billNo).toBe('RCPT-202609-0004');
   });
 });

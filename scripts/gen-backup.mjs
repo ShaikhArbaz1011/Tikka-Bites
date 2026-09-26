@@ -67,7 +67,7 @@ for (const tRaw of times) {
   const total = Math.floor((raw + 50) / 100) * 100;
   const orderType = ['dine-in', 'dine-in', 'takeaway', 'delivery'][r(4)];
   const bill = {
-    billNo: `INV-${monthKey}-${String(seq).padStart(4, '0')}`,
+    billNo: `RCPT-${monthKey}-${String(seq).padStart(4, '0')}`,
     createdAt, monthKey, hour: d.getHours(), weekday: d.getDay(), items, orderType,
     ...(orderType === 'dine-in' ? { tableNo: String(1 + r(15)) } : {}),
     paymentMode: ['cash', 'upi', 'upi', 'upi'][r(4)],

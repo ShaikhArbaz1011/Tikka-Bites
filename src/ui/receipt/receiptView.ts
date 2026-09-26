@@ -59,7 +59,7 @@ export async function showReceipt(bill: Bill, opts: { autoPrint?: boolean } = {}
     preview,
     h('p', { class: 'field-hint', text: 'Tip: choose "Save as PDF" as the printer to get a PDF.' }),
   );
-  const m = openModal({ title: `Bill ${bill.billNo}`, body, actions: [done, wa, print], wide: true, onClose: clearPrint });
+  const m = openModal({ title: `Receipt ${bill.billNo}`, body, actions: [done, wa, print], wide: true, onClose: clearPrint });
   done.addEventListener('click', m.close);
   print.addEventListener('click', () => void printWhenReady());
   render();

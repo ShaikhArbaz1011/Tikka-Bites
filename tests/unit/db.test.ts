@@ -45,9 +45,9 @@ describe('first run', () => {
 });
 
 describe('saveBill', () => {
-  it('creates INV-YYYYMM-0001 with snapshots, totals and a stored cheesy line', async () => {
+  it('creates RCPT-YYYYMM-0001 with snapshots, totals and a stored cheesy line', async () => {
     const b = await saveBill(draft(), SEP);
-    expect(b.billNo).toBe('INV-202609-0001');
+    expect(b.billNo).toBe('RCPT-202609-0001');
     expect(b.subtotalPaise).toBe(67950);
     expect(b.totalPaise).toBe(68000); // 679.50 rounded to 680
     expect(b.roundOffPaise).toBe(50);
@@ -75,18 +75,18 @@ describe('saveBill', () => {
   });
 
   it('increments per month and resets for a new month', async () => {
-    expect((await saveBill(draft(), SEP)).billNo).toBe('INV-202609-0001');
-    expect((await saveBill(draft(), SEP)).billNo).toBe('INV-202609-0002');
-    expect((await saveBill(draft(), OCT)).billNo).toBe('INV-202610-0001');
-    expect((await saveBill(draft(), SEP)).billNo).toBe('INV-202609-0003');
+    expect((await saveBill(draft(), SEP)).billNo).toBe('RCPT-202609-0001');
+    expect((await saveBill(draft(), SEP)).billNo).toBe('RCPT-202609-0002');
+    expect((await saveBill(draft(), OCT)).billNo).toBe('RCPT-202610-0001');
+    expect((await saveBill(draft(), SEP)).billNo).toBe('RCPT-202609-0003');
   });
 
   it('never duplicates bill numbers under 50 concurrent saves', async () => {
     const bills = await Promise.all(Array.from({ length: 50 }, () => saveBill(draft(), SEP)));
     const nos = bills.map((b) => b.billNo).sort();
     expect(new Set(nos).size).toBe(50);
-    expect(nos[0]).toBe('INV-202609-0001');
-    expect(nos[49]).toBe('INV-202609-0050');
+    expect(nos[0]).toBe('RCPT-202609-0001');
+    expect(nos[49]).toBe('RCPT-202609-0050');
   });
 
   it('rolls back everything if the bill fails (no gaps in numbering)', async () => {
@@ -95,7 +95,7 @@ describe('saveBill', () => {
     expect((await getDish(paneer))!.usedInBills).toBe(false); // earlier write rolled back
     expect(await getMonthlyStats('202609')).toBeUndefined();
     const ok = await saveBill(draft({ items: [{ menuId: paneer, qty: 1 }] }), SEP);
-    expect(ok.billNo).toBe('INV-202609-0001');
+    expect(ok.billNo).toBe('RCPT-202609-0001');
   });
 
   it('rejects invalid drafts', async () => {
@@ -157,7 +157,7 @@ describe('monthly stats (pre-aggregation) and void', () => {
     await expect(voidBill(b.billNo, '  ')).rejects.toThrow('reason');
     await voidBill(b.billNo, 'Wrong order');
     await expect(voidBill(b.billNo, 'Again')).rejects.toThrow('already');
-    await expect(voidBill('INV-202609-9999', 'Nope')).rejects.toThrow('not found');
+    await expect(voidBill('RCPT-202609-9999', 'Nope')).rejects.toThrow('not found');
   });
 
   it('applyBill +1 then −1 returns to empty', () => {
@@ -212,7 +212,7 @@ describe('pagination', () => {
     }
     expect(sizes).toEqual([50, 50, 20]);
     expect(new Set(seen).size).toBe(120);
-    expect(seen[0]).toBe('INV-202609-0120');
-    expect(seen[119]).toBe('INV-202609-0001');
+    expect(seen[0]).toBe('RCPT-202609-0120');
+    expect(seen[119]).toBe('RCPT-202609-0001');
   });
 });

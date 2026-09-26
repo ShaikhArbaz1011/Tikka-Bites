@@ -33,7 +33,7 @@ export function buildReceipt(bill: Bill, s: Settings, width: ReceiptWidth): HTML
     h(
       'div',
       { class: 'r-meta' },
-      row('Bill No', bill.billNo),
+      row('Receipt No', bill.billNo),
       row('Date', formatDateTime(bill.createdAt)),
       row('Order', orderLine),
       bill.customerName ? row('Customer', bill.customerName) : null,

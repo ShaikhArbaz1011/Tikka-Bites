@@ -63,8 +63,8 @@ test('add dishes → bill → print preview → appears in reports → void', as
   // 3. Save & Print → receipt preview, print dialog requested
   await page.getByRole('button', { name: 'Save & Print' }).click();
   const dialog = page.locator('dialog[open]');
-  await expect(dialog.locator('.modal-title')).toHaveText(/INV-\d{6}-0001/);
-  const billNo = (await dialog.locator('.modal-title').innerText()).replace('Bill ', '');
+  await expect(dialog.locator('.modal-title')).toHaveText(/RCPT-\d{6}-0001/);
+  const billNo = (await dialog.locator('.modal-title').innerText()).replace('Receipt ', '');
   await expect(dialog.locator('.receipt')).toContainText('Masala Dosa');
   await expect(dialog.locator('.receipt')).toContainText('Dine-in · Table 9');
   await expect(dialog.locator('.r-grand')).toContainText('₹495.00');
@@ -126,7 +126,7 @@ test('works offline after the first visit (PWA)', async ({ page, context }) => {
   await page.locator('.dish-card').first().click();
   if (isPhone(page)) await page.locator('.cart-bar').click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.locator('dialog[open] .modal-title')).toHaveText(/INV-\d{6}-0001/);
+  await expect(page.locator('dialog[open] .modal-title')).toHaveText(/RCPT-\d{6}-0001/);
   await page.locator('dialog[open]').getByRole('button', { name: 'Done' }).click();
   await page.getByRole('link', { name: 'Reports' }).click();
   await expect(page.locator('.kpi', { hasText: 'Bills' }).locator('.kpi-value')).toHaveText('1');

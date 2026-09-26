@@ -20,7 +20,7 @@ async function billOneWrap(page: Page) {
   const title = await dialog.locator('.modal-title').innerText();
   const date = await dialog.locator('.r-meta .r-row', { hasText: 'Date' }).locator('.r-num').innerText();
   await dialog.getByRole('button', { name: 'Done' }).click();
-  return { billNo: title.replace('Bill ', ''), date };
+  return { billNo: title.replace('Receipt ', ''), date };
 }
 
 test('bills around midnight on the 1st land in the right month everywhere', async ({ page }) => {
@@ -34,11 +34,11 @@ test('bills around midnight on the 1st land in the right month everywhere', asyn
   await expect(page.locator('.dish-row')).toHaveCount(40);
 
   const jan = await billOneWrap(page);
-  expect(jan).toEqual({ billNo: 'INV-202601-0001', date: '31/01/2026 23:58' });
+  expect(jan).toEqual({ billNo: 'RCPT-202601-0001', date: '31/01/2026 23:58' });
 
   await page.clock.setFixedTime(IST('2026-02-01T00:02:00'));
   const feb = await billOneWrap(page);
-  expect(feb).toEqual({ billNo: 'INV-202602-0001', date: '01/02/2026 00:02' });
+  expect(feb).toEqual({ billNo: 'RCPT-202602-0001', date: '01/02/2026 00:02' });
 
   // Reports: "This month" (February) and "Last month" (January) each hold one bill.
   await page.getByRole('link', { name: 'Reports', exact: true }).click();
@@ -51,12 +51,12 @@ test('bills around midnight on the 1st land in the right month everywhere', asyn
   await page.getByLabel('Date range').selectOption('lastMonth');
   await expect(page.locator('.range-label')).toHaveText('Last month · Jan 2026');
   await expect(bills).toHaveText('1');
-  await expect(page.locator('.bill-row .bill-no')).toHaveText('INV-202601-0001');
+  await expect(page.locator('.bill-row .bill-no')).toHaveText('RCPT-202601-0001');
 
   await page.getByLabel('Date range').selectOption('today');
-  await expect(page.locator('.bill-row .bill-no')).toHaveText('INV-202602-0001');
+  await expect(page.locator('.bill-row .bill-no')).toHaveText('RCPT-202602-0001');
   await page.getByLabel('Date range').selectOption('yesterday');
-  await expect(page.locator('.bill-row .bill-no')).toHaveText('INV-202601-0001');
+  await expect(page.locator('.bill-row .bill-no')).toHaveText('RCPT-202601-0001');
 
   // Month over month compares Feb with Jan.
   await page.getByLabel('Date range').selectOption('month');
@@ -78,7 +78,7 @@ test('bills around midnight on the 1st land in the right month everywhere', asyn
   const wb = files.get('xl/workbook.xml')!;
   expect([...wb.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1])).toEqual(['Summary', 'Bills', 'Items', 'Dish Sales']);
   const b = cells(files.get('xl/worksheets/sheet2.xml')!); // Bills: header on row 1
-  expect([b['A2'], b['B2'], b['A3'], b['B3']]).toEqual(['INV-202601-0001', 46053, 'INV-202602-0001', 46054]);
+  expect([b['A2'], b['B2'], b['A3'], b['B3']]).toEqual(['RCPT-202601-0001', 46053, 'RCPT-202602-0001', 46054]);
   expect(b['C2']).toBeCloseTo((23 * 60 + 58) / 1440, 8);
   expect(b['C3']).toBeCloseTo(2 / 1440, 8);
   expect(b['H2']).toBe('Cash');

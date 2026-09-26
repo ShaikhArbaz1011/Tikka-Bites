@@ -152,7 +152,7 @@ function checkBill(v: unknown, p: string): string {
   const o = obj(v, p, BILL_REQUIRED, ['tableNo', 'customerName', 'voidReason', 'voidedAt']);
   const billNo = str(o['billNo'], `${p}.billNo`, 1, 30);
   const m = BILL_NO_RE.exec(billNo);
-  if (!m) fail(`${p}.billNo`, 'is not in INV-YYYYMM-0001 format');
+  if (!m) fail(`${p}.billNo`, 'is not in RCPT-YYYYMM-0001 format');
   if (o['monthKey'] !== `${m[1]}${m[2]}`) fail(`${p}.monthKey`, 'does not match bill number');
   int(o['createdAt'], `${p}.createdAt`, 0, MAX_TIME);
   int(o['hour'], `${p}.hour`, 0, 23);

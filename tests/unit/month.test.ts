@@ -48,15 +48,15 @@ describe('bill numbers follow the local month', () => {
   it('last second of January vs first second of February', async () => {
     const jan = await saveBill(bill(), ist(2026, 1, 31, 23, 59, 59, 999));
     const feb = await saveBill(bill(), ist(2026, 2, 1, 0, 0, 0, 0));
-    expect(jan.billNo).toBe('INV-202601-0001');
-    expect(feb.billNo).toBe('INV-202602-0001');
+    expect(jan.billNo).toBe('RCPT-202601-0001');
+    expect(feb.billNo).toBe('RCPT-202602-0001');
     expect(jan.monthKey).toBe('202601');
     expect(feb.monthKey).toBe('202602');
   });
 
   it('00:30 IST on the 1st belongs to the new month (not the UTC one)', async () => {
     const b = await saveBill(bill(), ist(2026, 2, 1, 0, 30));
-    expect(b.billNo).toBe('INV-202602-0001');
+    expect(b.billNo).toBe('RCPT-202602-0001');
     expect(b.hour).toBe(0);
     expect(b.weekday).toBe(0); // 1 Feb 2026 is a Sunday
     expect(formatDateTime(b.createdAt)).toBe('01/02/2026 00:30');
@@ -67,17 +67,17 @@ describe('bill numbers follow the local month', () => {
     for (const t of [ist(2026, 1, 5), ist(2026, 1, 20), ist(2026, 2, 3), ist(2026, 2, 28, 23, 59), ist(2026, 3, 1, 0, 1)]) {
       nos.push((await saveBill(bill(), t)).billNo);
     }
-    expect(nos).toEqual(['INV-202601-0001', 'INV-202601-0002', 'INV-202602-0001', 'INV-202602-0002', 'INV-202603-0001']);
+    expect(nos).toEqual(['RCPT-202601-0001', 'RCPT-202601-0002', 'RCPT-202602-0001', 'RCPT-202602-0002', 'RCPT-202603-0001']);
   });
 
   it('year end: 31 Dec 23:59 → 1 Jan 00:00 starts a new year and month', async () => {
-    expect((await saveBill(bill(), ist(2026, 12, 31, 23, 59))).billNo).toBe('INV-202612-0001');
-    expect((await saveBill(bill(), ist(2027, 1, 1, 0, 0))).billNo).toBe('INV-202701-0001');
+    expect((await saveBill(bill(), ist(2026, 12, 31, 23, 59))).billNo).toBe('RCPT-202612-0001');
+    expect((await saveBill(bill(), ist(2027, 1, 1, 0, 0))).billNo).toBe('RCPT-202701-0001');
   });
 
   it('leap day 29 Feb 2028 is a normal February bill', async () => {
     const b = await saveBill(bill(), ist(2028, 2, 29, 13, 0));
-    expect(b.billNo).toBe('INV-202802-0001');
+    expect(b.billNo).toBe('RCPT-202802-0001');
     expect(formatDateTime(b.createdAt)).toBe('29/02/2028 13:00');
   });
 });
@@ -135,13 +135,13 @@ describe('monthly totals are kept per month', () => {
 
   it('bill list for February starts at the newest February bill and stops at 1 Feb', async () => {
     const page = await listBillsPage(monthRange(2026, 1), 50);
-    expect(page.bills.map((b) => b.billNo)).toEqual(['INV-202602-0002', 'INV-202602-0001']);
+    expect(page.bills.map((b) => b.billNo)).toEqual(['RCPT-202602-0002', 'RCPT-202602-0001']);
   });
 
   it('Excel export keeps each bill on its own local date and time', async () => {
     const { sheets } = await collectExport({ ...base, range: customRange('2026-01-31', '2026-02-01')! }, 'Custom', 'Tikka Bites');
     const rows = sheets.find((s) => s.name === 'Bills')!.rows;
-    expect(rows.map((r) => r[0])).toEqual(['INV-202601-0001', 'INV-202602-0001']);
+    expect(rows.map((r) => r[0])).toEqual(['RCPT-202601-0001', 'RCPT-202602-0001']);
     expect(excelDate(rows[0]![1] as number)).toBe(46053); // 31-01-2026
     expect(excelDate(rows[1]![1] as number)).toBe(46054); // 01-02-2026 (not 31 Jan UTC)
     expect(excelTime(rows[0]![2] as number)).toBeCloseTo((23 * 60 + 59) / 1440, 10);
