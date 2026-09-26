@@ -1,4 +1,8 @@
 import { test, expect, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+
+/** What the page handed to the share menu (recorded by a stub in beforeEach). */
+type Shared = { __shared: { name: string; type: string; text: string }[] };
 
 const isPhone = (page: Page) => (page.viewportSize()?.width ?? 1280) < 640;
 
@@ -12,6 +16,22 @@ test.beforeEach(async ({ page }) => {
     window.print = () => {
       (window as unknown as { __prints: number }).__prints++;
     };
+  });
+  // Record what would go to the phone's share menu (WhatsApp) instead of opening it.
+  await page.addInitScript(() => {
+    const w = window as unknown as Shared;
+    w.__shared = [];
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: (d?: ShareData) => !!d?.files?.length });
+    Object.defineProperty(navigator, 'share', {
+      configurable: true,
+      value: async (d?: ShareData) => {
+        for (const f of d?.files ?? []) {
+          let text = '';
+          for (const b of new Uint8Array(await f.arrayBuffer())) text += String.fromCharCode(b);
+          w.__shared.push({ name: f.name, type: f.type, text });
+        }
+      },
+    });
   });
   test.info().annotations.push({ type: 'console-errors', description: '' });
   (page as unknown as { __errors: string[] }).__errors = errors;
@@ -79,8 +99,15 @@ test('add dishes → bill → print preview → appears in reports → void', as
   await expect(page.locator('#print-root .receipt.w58')).toBeVisible();
   await expect(page.locator('#app')).toBeHidden();
   await page.emulateMedia({ media: 'screen' });
-  const wa = await dialog.locator('a.btn-wa').getAttribute('href');
-  expect(decodeURIComponent(wa!)).toContain(billNo);
+  // Share PDF hands a phone-size PDF to the share menu (where WhatsApp is picked).
+  await dialog.getByRole('button', { name: 'Share PDF' }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Shared).__shared.length)).toBe(1);
+  const pdf = await page.evaluate(() => (window as unknown as Shared).__shared[0]!);
+  expect(pdf).toMatchObject({ name: `TikkaBites-${billNo}.pdf`, type: 'application/pdf' });
+  expect(pdf.text.startsWith('%PDF-1.4')).toBe(true);
+  expect(pdf.text).toContain('/MediaBox [0 0 360 780]');
+  expect(pdf.text).toContain('/Count 1');
+  expect(pdf.text.endsWith('%%EOF\n')).toBe(true);
   await dialog.getByRole('button', { name: 'Done' }).click();
 
   // 4. Reports
@@ -141,4 +168,48 @@ test('rejects unsafe input and tampered backups', async ({ page }) => {
   await page.goto('/#/settings');
   await page.locator('#restore-file').setInputFiles({ name: 'evil.json', mimeType: 'application/json', buffer: Buffer.from('{"app":"restobill","schemaVersion":1,"hack":true}') });
   await expect(page.locator('.toast-error')).toContainText('Backup rejected');
+});
+
+test('the − button takes a dish from 3 to 2, and the saved bill says 2', async ({ page }) => {
+  await page.goto('/#/menu');
+  await page.getByRole('button', { name: /Load Tikka Bites menu/ }).click();
+  await expect(page.locator('.dish-row')).toHaveCount(40);
+  await page.getByRole('link', { name: 'Billing' }).click();
+  const card = page.locator('.dish-card', { hasText: 'Chicken Tikka (5 Pcs)' });
+  for (let i = 0; i < 3; i++) await card.click();
+  await expect(card.locator('.qty-badge')).toHaveText('3');
+  if (isPhone(page)) await page.locator('.cart-bar').click();
+  const line = page.locator('.cart-line', { hasText: 'Chicken Tikka (5 Pcs)' });
+  await expect(line.locator('.qty-input')).toHaveValue('3');
+  await expect(page.locator('.trow-total')).toContainText('₹300.00');
+  await line.getByRole('button', { name: 'One less Chicken Tikka (5 Pcs)' }).click();
+  await expect(line.locator('.qty-input')).toHaveValue('2');
+  await expect(page.locator('.trow-total')).toContainText('₹200.00');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const row = page.locator('dialog[open] .r-items tbody tr', { hasText: 'Chicken Tikka (5 Pcs)' });
+  await expect(row.locator('.r-qty')).toHaveText('2');
+  await expect(row.locator('.r-amt')).toHaveText('₹200.00');
+});
+
+test('Share PDF downloads the receipt where there is no share menu; long bills get more pages', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, 'canShare', { configurable: true, value: undefined }));
+  await page.goto('/#/menu');
+  await page.getByRole('button', { name: /Load Tikka Bites menu/ }).click();
+  await expect(page.locator('.dish-row')).toHaveCount(40);
+  await page.getByRole('link', { name: 'Billing' }).click();
+  const cards = page.locator('.dish-card');
+  await expect(cards).toHaveCount(40);
+  for (let i = 0; i < 40; i++) await cards.nth(i).dispatchEvent('click');
+  if (isPhone(page)) await page.locator('.cart-bar').click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.locator('dialog[open]');
+  await expect(dialog.locator('.modal-title')).toHaveText(/RCPT-\d{6}-0001/);
+  const [download] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: 'Share PDF' }).click()]);
+  expect(download.suggestedFilename()).toMatch(/^TikkaBites-RCPT-\d{6}-0001\.pdf$/);
+  const pdf = readFileSync(await download.path(), 'latin1');
+  expect(pdf.startsWith('%PDF-1.4')).toBe(true);
+  const pages = Number(/\/Count (\d+)/.exec(pdf)![1]);
+  expect(pages).toBeGreaterThan(1); // 40 dishes don't fit on one phone screen
+  expect(pdf.match(/\/MediaBox \[0 0 360 780\]/g)).toHaveLength(pages); // every page is phone-sized
+  await expect(dialog.getByRole('status')).toContainText('Attach it in WhatsApp');
 });

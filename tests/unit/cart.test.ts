@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Cart, parseDraft } from '../../src/ui/billing/cartState';
+import { computeTotals, NO_DISCOUNT } from '../../src/core/totals';
 
 describe('Cart', () => {
   it('adds, steps and clamps quantities to 1–999', () => {
@@ -45,5 +46,18 @@ describe('parseDraft', () => {
     expect(parseDraft({ paymentMode: 'card' }, new Set())!.paymentMode).toBe('cash');
     expect(d!.tableNo.length).toBe(10);
     expect(parseDraft(null, new Set())).toBeNull();
+  });
+});
+
+describe('reducing a quantity (the − button)', () => {
+  it('takes a dish from 3 to 2, and the bill total follows', () => {
+    const c = new Cart();
+    for (let i = 0; i < 3; i++) c.add(7);
+    expect(c.qtyOf(7)).toBe(3);
+    c.decrement(7);
+    expect(c.qtyOf(7)).toBe(2);
+    expect(c.data.lines).toEqual([{ menuId: 7, qty: 2 }]);
+    const t = computeTotals(c.data.lines.map((l) => ({ unitPaise: 10_000, qty: l.qty })), NO_DISCOUNT, true);
+    expect(t.totalPaise).toBe(20_000);
   });
 });

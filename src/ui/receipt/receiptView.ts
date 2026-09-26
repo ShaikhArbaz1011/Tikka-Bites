@@ -2,8 +2,9 @@ import { h, replaceChildren } from '../dom';
 import { openModal } from '../components/modal';
 import { segmented } from '../components/form';
 import { icon } from '../components/icons';
+import { downloadBlob } from '../download';
 import { buildReceipt } from './receipt';
-import { whatsappUrl } from './whatsapp';
+import { receiptPdfFile } from './receiptPdf';
 import { getSettings } from '../../db/settingsRepo';
 import type { Bill, ReceiptWidth, Settings } from '../../db/types';
 
@@ -27,10 +28,20 @@ function clearPrint(): void {
   if (root) root.replaceChildren();
 }
 
+/** True when the browser can hand this file to the device's share menu (phones, Windows, ChromeOS). */
+function canShareFile(file: File): boolean {
+  try {
+    return typeof navigator.canShare === 'function' && navigator.canShare({ files: [file] });
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Receipt preview with format picker, Print (browser dialog → printer or
- * "Save as PDF") and WhatsApp share. Reprints use the stored bill, so the
- * same cheesy line and prices appear every time.
+ * Receipt preview with a paper-size picker, Print (browser dialog → printer or
+ * "Save as PDF") and Share PDF: a phone-size PDF handed to the share menu, where
+ * WhatsApp is picked, or downloaded where there is no share menu. Reprints use
+ * the stored bill, so the same cheesy line and prices appear every time.
  */
 export async function showReceipt(bill: Bill, opts: { autoPrint?: boolean } = {}): Promise<void> {
   const s = await getSettings();
@@ -48,21 +59,63 @@ export async function showReceipt(bill: Bill, opts: { autoPrint?: boolean } = {}
   });
 
   const print = h('button', { class: 'btn btn-primary', attrs: { type: 'button' } }, icon('print', 18), 'Print');
-  const wa = h('a', {
-    class: 'btn btn-wa',
-    attrs: { href: whatsappUrl(bill, s), target: '_blank', rel: 'noopener noreferrer' },
-  }, icon('share', 18), 'WhatsApp');
+  const share = h('button', { class: 'btn btn-wa', attrs: { type: 'button' } }, icon('share', 18), 'Share PDF');
   const done = h('button', { class: 'btn', text: 'Done', attrs: { type: 'button' } });
+  const hasShareMenu = canShareFile(new File(['%PDF'], 'receipt.pdf', { type: 'application/pdf' }));
+  const note = h('p', {
+    class: 'field-hint',
+    attrs: { role: 'status' },
+    text: hasShareMenu
+      ? 'Share PDF sends this receipt as a phone-size PDF. Pick WhatsApp in the share menu.'
+      : 'Share PDF downloads this receipt as a phone-size PDF to attach in WhatsApp.',
+  });
 
   const body = h('div', { class: 'receipt-modal' },
     h('div', { class: 'receipt-toolbar' }, h('span', { class: 'field-label', text: 'Paper' }), format.el),
     preview,
-    h('p', { class: 'field-hint', text: 'Tip: choose "Save as PDF" as the printer to get a PDF.' }),
+    note,
   );
-  const m = openModal({ title: `Receipt ${bill.billNo}`, body, actions: [done, wa, print], wide: true, onClose: clearPrint });
+  const m = openModal({ title: `Receipt ${bill.billNo}`, body, actions: [done, share, print], wide: true, onClose: clearPrint });
   done.addEventListener('click', m.close);
   print.addEventListener('click', () => void printWhenReady());
+
+  // The PDF is made in the background once the dialog is up: browsers only open the
+  // share menu within a moment of the tap, so it should be ready before the tap.
+  let pdf: File | undefined;
+  let job: Promise<File> | undefined;
+  const makePdf = (): Promise<File> =>
+    (job ??= receiptPdfFile(bill, s).then(
+      (file) => (pdf = file),
+      (err: unknown) => {
+        job = undefined; // let the next tap try again
+        throw err;
+      },
+    ));
+
+  const sharePdf = async () => {
+    share.disabled = true;
+    try {
+      const file = pdf ?? (await makePdf());
+      if (canShareFile(file)) {
+        await navigator.share({ files: [file], title: `Receipt ${bill.billNo}` });
+      } else {
+        downloadBlob(file, file.name);
+        note.textContent = `Saved ${file.name}. Attach it in WhatsApp.`;
+      }
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : '';
+      if (name === 'NotAllowedError') note.textContent = 'Tap Share PDF again to open the share menu.';
+      else if (name !== 'AbortError') note.textContent = 'Could not make the PDF. Please try again.'; // AbortError: share menu closed
+    } finally {
+      share.disabled = false;
+    }
+  };
+  share.addEventListener('click', () => void sharePdf());
+
   render();
   print.focus();
   if (opts.autoPrint) requestAnimationFrame(() => void printWhenReady());
+  setTimeout(() => {
+    if (m.dialog.open) void makePdf().catch(() => undefined);
+  }, 300);
 }

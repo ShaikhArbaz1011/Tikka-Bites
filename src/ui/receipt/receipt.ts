@@ -9,14 +9,25 @@ export const ORDER_LABEL = { 'dine-in': 'Dine-in', takeaway: 'Takeaway', deliver
 /** 'card' kept only so bills saved before Card was removed still print correctly. */
 export const PAYMENT_LABEL = { cash: 'Cash', upi: 'UPI', card: 'Card' } as const;
 
+/** "Dine-in · Table 4", or the order type alone. Shared by the printed receipt and the PDF. */
+export function orderLine(bill: Bill): string {
+  return bill.orderType === 'dine-in' && bill.tableNo ? `Dine-in · Table ${bill.tableNo}` : ORDER_LABEL[bill.orderType];
+}
+
+export function discountLabel(bill: Bill): string {
+  return bill.discount.kind === 'pct' ? `Discount (${bill.discount.bp / 100}%)` : 'Discount';
+}
+
+/** Round-off with its sign, e.g. "+₹0.40" or "−₹0.25". */
+export function roundOffText(paise: number, money: (p: number) => string): string {
+  return `${paise < 0 ? '−' : '+'}${money(Math.abs(paise))}`;
+}
+
 /** Build the receipt DOM. Everything is set via textContent (XSS-safe). */
 export function buildReceipt(bill: Bill, s: Settings, width: ReceiptWidth): HTMLElement {
   const m = (p: number) => formatINR(p, s.currencySymbol);
   const row = (label: string, value: string, cls = '') =>
     h('div', { class: `r-row ${cls}` }, h('span', { text: label }), h('span', { class: 'r-num', text: value }));
-
-  const orderLine = bill.orderType === 'dine-in' && bill.tableNo ? `Dine-in · Table ${bill.tableNo}` : ORDER_LABEL[bill.orderType];
-  const discLabel = bill.discount.kind === 'pct' ? `Discount (${bill.discount.bp / 100}%)` : 'Discount';
 
   return h(
     'article',
@@ -35,7 +46,7 @@ export function buildReceipt(bill: Bill, s: Settings, width: ReceiptWidth): HTML
       { class: 'r-meta' },
       row('Receipt No', bill.billNo),
       row('Date', formatDateTime(bill.createdAt)),
-      row('Order', orderLine),
+      row('Order', orderLine(bill)),
       bill.customerName ? row('Customer', bill.customerName) : null,
     ),
     h(
@@ -72,8 +83,8 @@ export function buildReceipt(bill: Bill, s: Settings, width: ReceiptWidth): HTML
       'div',
       { class: 'r-totals' },
       row(`Subtotal (${bill.itemCount} item${bill.itemCount === 1 ? '' : 's'})`, m(bill.subtotalPaise)),
-      bill.discountPaise ? row(discLabel, `−${m(bill.discountPaise)}`) : null,
-      bill.roundOffPaise ? row('Round off', `${bill.roundOffPaise < 0 ? '−' : '+'}${m(Math.abs(bill.roundOffPaise))}`) : null,
+      bill.discountPaise ? row(discountLabel(bill), `−${m(bill.discountPaise)}`) : null,
+      bill.roundOffPaise ? row('Round off', roundOffText(bill.roundOffPaise, m)) : null,
       row('TOTAL', m(bill.totalPaise), 'r-grand'),
       row('Paid by', PAYMENT_LABEL[bill.paymentMode]),
     ),
