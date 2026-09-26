@@ -1,7 +1,6 @@
 import { h, replaceChildren, rafBatch } from '../dom';
 import { icon } from '../components/icons';
 import { vegMark } from '../components/vegMark';
-import { dishPhoto } from '../components/dishPhoto';
 import { select, toggle } from '../components/form';
 import { confirmDialog } from '../components/modal';
 import { toast } from '../components/toast';
@@ -55,7 +54,6 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     h(
       'li',
       { class: `dish-row${d.active ? '' : ' is-disabled'}`, dataset: { id: String(d.id) } },
-      dishPhoto(d.image, d.name, 'dish-thumb'),
       vegMark(d.isVeg),
       h('div', { class: 'dish-main' }, h('span', { class: 'dish-name', text: d.name }), h('span', { class: 'dish-cat', text: d.category })),
       h('span', { class: 'dish-price', text: formatINR(d.pricePaise) }),
@@ -85,7 +83,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
         });
         const add = h('button', { class: 'btn', text: 'Add your first dish', attrs: { type: 'button' } });
         add.addEventListener('click', () => openDishForm(undefined, []));
-        replaceChildren(empty, h('p', { class: 'empty-title', text: 'Your menu is empty' }), h('p', { class: 'muted', text: 'Load the full Tikka Bites menu with photos (you can edit any dish), or add dishes one by one.' }), h('div', { class: 'empty-actions' }, sample, add));
+        replaceChildren(empty, h('p', { class: 'empty-title', text: 'Your menu is empty' }), h('p', { class: 'muted', text: 'Load the full Tikka Bites menu (you can edit any dish), or add dishes one by one.' }), h('div', { class: 'empty-actions' }, sample, add));
       } else {
         replaceChildren(empty, h('p', { class: 'empty-title', text: 'No dishes match' }), h('p', { class: 'muted', text: 'Try a different search or filter.' }));
       }

@@ -1,7 +1,6 @@
 import { h, replaceChildren, rafBatch } from '../dom';
 import { icon } from '../components/icons';
 import { vegMark } from '../components/vegMark';
-import { dishPhoto } from '../components/dishPhoto';
 import { segmented, textInput } from '../components/form';
 import { toast } from '../components/toast';
 import { Cart, parseDraft } from './cartState';
@@ -123,11 +122,8 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     const els = menu.map((d) => {
       const badge = h('span', { class: 'qty-badge', attrs: { hidden: true } });
       const el = h('button', { class: 'dish-card', dataset: { id: String(d.id) }, attrs: { type: 'button' } },
-        dishPhoto(d.image, d.name, 'dish-card-img'),
-        h('span', { class: 'dish-card-marks' }, vegMark(d.isVeg), badge),
-        h('span', { class: 'dish-card-body' },
-          h('span', { class: 'dish-card-name', text: d.name }),
-          h('span', { class: 'dish-card-price', text: money(d.pricePaise) })),
+        h('span', { class: 'dish-card-head' }, vegMark(d.isVeg), h('span', { class: 'dish-card-name', text: d.name })),
+        h('span', { class: 'dish-card-foot' }, h('span', { class: 'dish-card-price', text: money(d.pricePaise) }), badge),
       );
       cards.set(d.id, { el, badge });
       return el;

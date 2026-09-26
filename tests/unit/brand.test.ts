@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { TIKKA_BITES_MENU } from '../../src/data/sampleMenu';
-import { isDishImage, LIMITS } from '../../src/core/validate';
+import { LIMITS } from '../../src/core/validate';
+import { isLegacyDishPhoto } from '../../src/core/backupSchema';
 import { MAX_PRICE_PAISE } from '../../src/core/money';
 import { DEFAULT_SETTINGS, BUILT_IN_LOGO } from '../../src/db/db';
 
@@ -25,11 +26,9 @@ describe('Tikka Bites menu data', () => {
     expect(price('Chili Cheese Fries – Full')).toBe(100);
     expect(price('Water Bottle (500 ml)')).toBe(10);
   });
-  it('every dish photo is valid and exists in public/', () => {
-    for (const d of TIKKA_BITES_MENU) {
-      expect(isDishImage(d.image)).toBe(true);
-      expect(existsSync(`public${d.image}`)).toBe(true);
-    }
+  it('has no dish photos (removed at the owner’s request)', () => {
+    for (const d of TIKKA_BITES_MENU) expect('image' in d).toBe(false);
+    expect(existsSync('public/dishes')).toBe(false);
   });
   it('fries, crème and drinks are veg; grill, wraps, burgers, sandwiches and nuggets are non-veg', () => {
     const vegSections = new Set(['Aloo Ke Laloo', 'Mitthu Miya (Seasonal)', 'Thanda Matter']);
@@ -37,8 +36,8 @@ describe('Tikka Bites menu data', () => {
   });
 });
 
-describe('dish image validation', () => {
-  it.each(['/dishes/tikka-wrap.webp', 'data:image/webp;base64,UklGRg=='])('accepts %s', (v) => expect(isDishImage(v)).toBe(true));
+describe('old backups: the dish photo field is still checked, then dropped', () => {
+  it.each(['/dishes/tikka-wrap.webp', 'data:image/webp;base64,UklGRg=='])('accepts %s', (v) => expect(isLegacyDishPhoto(v)).toBe(true));
   it.each([
     'javascript:alert(1)',
     'https://evil.example/x.webp',
@@ -48,7 +47,7 @@ describe('dish image validation', () => {
     'data:text/html;base64,PHNjcmlwdD4=',
     `data:image/png;base64,${'A'.repeat(200_001)}`,
     42,
-  ])('rejects %s', (v) => expect(isDishImage(v)).toBe(false));
+  ])('rejects %s', (v) => expect(isLegacyDishPhoto(v)).toBe(false));
 });
 
 describe('brand defaults', () => {

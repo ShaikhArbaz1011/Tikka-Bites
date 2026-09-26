@@ -2,7 +2,7 @@ import { getDB, SETTINGS_KEY, DEFAULT_SETTINGS } from './db';
 import { BACKUP_APP, BACKUP_SCHEMA_VERSION, type Backup } from '../core/backupSchema';
 import { applyBill, emptyStats } from '../core/stats';
 import { parseBillNo } from '../core/billNo';
-import type { MonthlyStats, Settings } from './types';
+import type { Dish, MonthlyStats, Settings } from './types';
 import type { BagState } from '../core/shuffleBag';
 
 /**
@@ -60,7 +60,11 @@ export async function importBackup(b: Backup): Promise<void> {
   const tx = db.transaction([...stores], 'readwrite');
   for (const name of stores) void tx.objectStore(name).clear();
   void tx.objectStore('settings').put(b.settings, SETTINGS_KEY);
-  for (const d of b.menu) void tx.objectStore('menu').put(d);
+  for (const d of b.menu) {
+    // Dish photos were removed: older backups may still carry one per dish.
+    const { image: _photo, ...dish } = d as Dish & { image?: unknown };
+    void tx.objectStore('menu').put(dish);
+  }
   for (const l of b.cheesyLines) void tx.objectStore('cheesyLines').put(l);
   for (const bill of b.bills) void tx.objectStore('bills').put(bill);
   for (const s of stats.values()) void tx.objectStore('monthlyStats').put(s);

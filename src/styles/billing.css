@@ -10,21 +10,19 @@
 .chip[aria-pressed='true'] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
 
 .dish-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+/* Text-only dish tile (photos removed): veg mark + name on top, price + quantity at the bottom. */
 .dish-card {
-  position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: space-between; gap: 8px; min-height: 84px; padding: 10px 12px;
   text-align: left; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
   box-shadow: var(--shadow); transition: transform 0.08s, border-color 0.15s;
 }
 .dish-card:hover { border-color: var(--accent); }
 .dish-card:active { transform: scale(0.97); }
-.dish-card.in-cart { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
+.dish-card.in-cart { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
 .dish-card.is-highlighted { outline: 3px solid var(--focus); outline-offset: 1px; }
-.dish-card-img { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; background: var(--surface-2); }
-.no-photo { display: grid; place-items: center; font: 900 34px/1 var(--display); color: var(--accent); background: var(--accent-soft); }
-.dish-card-marks { position: absolute; inset: 8px 8px auto 8px; display: flex; justify-content: space-between; align-items: flex-start; pointer-events: none; }
-.dish-card-marks .veg-mark { background: #fff; box-shadow: 0 0 0 2px #fff; }
-.dish-card-body { display: grid; gap: 4px; padding: 8px 10px 10px; flex: 1; align-content: space-between; }
-.dish-card.in-cart .dish-card-body { background: var(--accent-soft); }
+.dish-card-head { display: flex; align-items: flex-start; gap: 8px; }
+.dish-card-head .veg-mark { margin-top: 1px; }
+.dish-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 26px; }
 .dish-card-name { font-weight: 650; line-height: 1.25; overflow-wrap: anywhere; font-size: 14px; }
 .dish-card-price { font-weight: 800; color: var(--accent-strong); font-variant-numeric: tabular-nums; }
 .qty-badge {

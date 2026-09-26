@@ -23,13 +23,8 @@ export function fitWithin(w: number, h: number, max = LOGO_MAX_SIDE): { w: numbe
 
 export class LogoError extends Error {}
 
-/** Validate an uploaded logo and return a compressed data URL (≤ 300px). Browser only. */
-export function logoToDataUrl(file: File): Promise<string> {
-  return imageToDataUrl(file, LOGO_MAX_SIDE);
-}
-
-/** Validate an uploaded image and return a compressed data URL, longest side ≤ maxSide. Browser only. */
-export async function imageToDataUrl(file: File, maxSide: number): Promise<string> {
+/** Validate an uploaded logo and return a compressed data URL (longest side ≤ 300px). Browser only. */
+export async function logoToDataUrl(file: File): Promise<string> {
   if (!ALLOWED_MIME.includes(file.type)) throw new LogoError('Please choose a PNG, JPG or WEBP image');
   if (file.size > MAX_LOGO_BYTES) throw new LogoError('Image must be 2 MB or smaller');
   const kind = sniffImageType(new Uint8Array(await file.slice(0, 16).arrayBuffer()));
@@ -41,7 +36,7 @@ export async function imageToDataUrl(file: File, maxSide: number): Promise<strin
   } catch {
     throw new LogoError('Could not read this image');
   }
-  const { w, h } = fitWithin(bitmap.width, bitmap.height, maxSide);
+  const { w, h } = fitWithin(bitmap.width, bitmap.height, LOGO_MAX_SIDE);
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -51,9 +46,9 @@ export async function imageToDataUrl(file: File, maxSide: number): Promise<strin
   ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
 
-  // WEBP keeps transparency and is small; fall back where unsupported (older Safari).
+  // WEBP keeps transparency and is small. Where it's unsupported (older Safari),
+  // a PNG logo stays PNG (keeps transparency); anything else becomes JPEG.
   let url = canvas.toDataURL('image/webp', 0.82);
-  // Logos may need transparency (PNG); photos stay small as JPEG.
-  if (!url.startsWith('data:image/webp')) url = kind === 'png' && maxSide <= LOGO_MAX_SIDE ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.85);
+  if (!url.startsWith('data:image/webp')) url = kind === 'png' ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', 0.85);
   return url;
 }

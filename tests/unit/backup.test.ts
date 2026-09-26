@@ -1,7 +1,9 @@
 import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resetDBForTests } from '../../src/db/db';
+import { resetDBForTests, getDB } from '../../src/db/db';
+import { getDish } from '../../src/db/menuRepo';
+import type { Dish } from '../../src/db/types';
 import { saveBill, voidBill, getMonthlyStats, getBill } from '../../src/db/billRepo';
 import { addDish, listMenu } from '../../src/db/menuRepo';
 import { exportBackup, importBackup } from '../../src/db/backup';
@@ -97,5 +99,41 @@ describe('strict import validation', () => {
     expect(validateBackup(null).ok).toBe(false);
     expect(validateBackup([]).ok).toBe(false);
     expect(validateBackup('{}').ok).toBe(false);
+  });
+});
+
+describe('dish photos (removed at the owner’s request)', () => {
+  it('drops photos an older version stored on this device, keeping the dish', async () => {
+    const d = await addDish({ name: 'Wrap', category: 'Rolls', pricePaise: 15000, isVeg: false, active: true });
+    await (await getDB()).put('menu', { ...d, image: 'data:image/webp;base64,UklGRg==' } as Dish);
+    await resetDBForTests(); // like reopening the app
+    const again = await getDish(d.id);
+    expect(again).toMatchObject({ id: d.id, name: 'Wrap', pricePaise: 15000, active: true });
+    expect('image' in again!).toBe(false);
+  });
+
+  it('still restores an old backup that has photos, without the photos', async () => {
+    await seed();
+    const j = (await backupJson()) as { menu: Record<string, unknown>[] };
+    j.menu[0]!['image'] = '/dishes/tikka-wrap.webp';
+    j.menu[1]!['image'] = 'data:image/webp;base64,UklGRg==';
+    const v = validateBackup(j);
+    expect(v.ok).toBe(true);
+    globalThis.indexedDB = new IDBFactory();
+    await resetDBForTests();
+    if (!v.ok) return;
+    await importBackup(v.backup);
+    const menu = await listMenu(true);
+    expect(menu).toHaveLength(2);
+    for (const d of menu) expect('image' in d).toBe(false);
+  });
+
+  it('rejects a tampered photo value in an old backup', async () => {
+    await seed();
+    const j = (await backupJson()) as { menu: Record<string, unknown>[] };
+    j.menu[0]!['image'] = 'javascript:alert(1)';
+    const v = validateBackup(j);
+    expect(v.ok).toBe(false);
+    if (!v.ok) expect(v.error).toMatch(/menu\[0\]\.image/);
   });
 });

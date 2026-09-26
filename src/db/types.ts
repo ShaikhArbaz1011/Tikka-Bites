@@ -20,8 +20,6 @@ export interface Dish {
   category: string;
   pricePaise: Paise;
   isVeg: boolean;
-  /** Built-in photo path (/dishes/x.webp) or an uploaded photo (data URL). */
-  image?: string;
   active: boolean;
   deleted: boolean;
   usedInBills: boolean;

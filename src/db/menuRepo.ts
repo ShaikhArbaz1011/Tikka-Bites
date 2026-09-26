@@ -1,6 +1,6 @@
 import { getDB } from './db';
 import type { Dish } from './types';
-import { cleanText, LIMITS, isDishImage } from '../core/validate';
+import { cleanText, LIMITS } from '../core/validate';
 import { MAX_PRICE_PAISE } from '../core/money';
 
 export interface DishInput {
@@ -9,7 +9,6 @@ export interface DishInput {
   pricePaise: number;
   isVeg: boolean;
   active: boolean;
-  image?: string;
 }
 
 export class MenuError extends Error {}
@@ -23,8 +22,7 @@ function checkInput(d: DishInput): DishInput {
   if (!Number.isSafeInteger(d.pricePaise) || d.pricePaise <= 0 || d.pricePaise > MAX_PRICE_PAISE) {
     throw new MenuError('Price must be more than 0 and at most ₹1,00,000');
   }
-  if (d.image !== undefined && !isDishImage(d.image)) throw new MenuError('Invalid dish photo');
-  return { name, category, pricePaise: d.pricePaise, isVeg: !!d.isVeg, active: !!d.active, ...(d.image ? { image: d.image } : {}) };
+  return { name, category, pricePaise: d.pricePaise, isVeg: !!d.isVeg, active: !!d.active };
 }
 
 /**
@@ -56,8 +54,7 @@ export async function updateDish(id: number, input: DishInput, now = Date.now())
   const tx = db.transaction('menu', 'readwrite');
   const existing = await tx.store.get(id);
   if (!existing || existing.deleted) throw new MenuError('Dish not found');
-  const { image: _old, ...rest } = existing;
-  const updated: Dish = { ...rest, ...d, nameLower: d.name.toLowerCase(), updatedAt: now };
+  const updated: Dish = { ...existing, ...d, nameLower: d.name.toLowerCase(), updatedAt: now };
   await tx.store.put(updated);
   await tx.done;
   return updated;

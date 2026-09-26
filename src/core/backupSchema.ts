@@ -6,7 +6,7 @@
 import { MAX_PRICE_PAISE, MAX_BP } from './money';
 import { BILL_NO_RE } from './billNo';
 import { discountAmount, type Discount } from './totals';
-import { LIMITS, isDishImage } from './validate';
+import { LIMITS } from './validate';
 import type { Bill, BillItem, CheesyLine, Dish, Settings } from '../db/types';
 import type { BagState } from './shuffleBag';
 
@@ -16,6 +16,17 @@ export const BACKUP_SCHEMA_VERSION = 1;
 export const MAX_BACKUP_BYTES = 50 * 1024 * 1024;
 const MAX_LOGO_CHARS = 700_000;
 const MAX_TIME = 8.64e15;
+
+/**
+ * Dish photos were removed at the owner's request. Backups made before that may
+ * still carry one per dish: it is checked (so a tampered file can't slip anything
+ * in) and then dropped on import.
+ */
+const LEGACY_PHOTO_PATH_RE = /^\/dishes\/[a-z0-9-]{1,40}\.webp$/;
+const LEGACY_PHOTO_MAX_CHARS = 200_000;
+export function isLegacyDishPhoto(v: unknown): v is string {
+  return typeof v === 'string' && (LEGACY_PHOTO_PATH_RE.test(v) || (v.length <= LEGACY_PHOTO_MAX_CHARS && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+=*$/.test(v)));
+}
 
 export interface Backup {
   app: typeof BACKUP_APP;
@@ -95,7 +106,7 @@ function checkSettings(v: unknown, p: string): void {
 
 function checkDish(v: unknown, p: string): number {
   const o = obj(v, p, ['id', 'name', 'nameLower', 'category', 'pricePaise', 'isVeg', 'active', 'deleted', 'usedInBills', 'createdAt', 'updatedAt'], ['image']);
-  if ('image' in o && !isDishImage(o['image'])) fail(`${p}.image`, 'must be a built-in dish photo or a PNG, JPEG or WEBP image');
+  if ('image' in o && !isLegacyDishPhoto(o['image'])) fail(`${p}.image`, 'must be a built-in dish photo or a PNG, JPEG or WEBP image');
   const id = int(o['id'], `${p}.id`, 1, Number.MAX_SAFE_INTEGER);
   const name = str(o['name'], `${p}.name`, 1, LIMITS.dishName);
   if (o['nameLower'] !== name.toLowerCase()) fail(`${p}.nameLower`, 'does not match name');

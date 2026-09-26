@@ -64,8 +64,37 @@ export function getDB(): Promise<DB> {
     terminated() {
       dbPromise = undefined;
     },
+  }).then(async (db) => {
+    try {
+      await dropLegacyDishPhotos(db);
+    } catch (e) {
+      console.warn('Could not remove old dish photos', e); // harmless: photos are never shown
+    }
+    return db;
   });
   return dbPromise;
+}
+
+/**
+ * Dish photos were removed at the owner's request. A device that ran an older
+ * version may still hold a photo on each dish (an uploaded one can be ~200 KB):
+ * drop them so they stop using storage and never reach a backup. Runs at every
+ * start, but only writes when a dish still has a photo.
+ */
+export async function dropLegacyDishPhotos(db: DB): Promise<number> {
+  const tx = db.transaction('menu', 'readwrite');
+  const done = tx.done;
+  done.catch(() => undefined); // a failure is rethrown by `await done` below
+  let dropped = 0;
+  for (let c = await tx.store.openCursor(); c; c = await c.continue()) {
+    if ('image' in c.value) {
+      const { image: _photo, ...dish } = c.value as Dish & { image?: unknown };
+      await c.update(dish);
+      dropped++;
+    }
+  }
+  await done;
+  return dropped;
 }
 
 /** Tests only: forget the cached connection so a fresh IndexedDB can be used. */

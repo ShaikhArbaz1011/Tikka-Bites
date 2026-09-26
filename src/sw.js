@@ -44,7 +44,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Hashed assets, icons, photos: cache first.
+  // Hashed assets and icons: cache first.
   event.respondWith(
     caches.match(req).then((hit) => hit || fetch(req).then((res) => {
       if (res.ok && req.url.startsWith(ASSETS)) {
