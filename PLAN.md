@@ -22,10 +22,7 @@ services. All data lives in the browser (IndexedDB). Deploys free on Netlify or 
   - `public/brand/logo-round-*.webp`: the round logo, cut out of the PDF with a transparent circle. It's used on receipts (default, and it can be switched off), for the tablet rail and the phone top bar, and for the PWA icons.
   - `public/brand/logo-wide.webp`: the wide logo, used in the desktop sidebar.
 - **Menu:** `src/data/sampleMenu.ts` has the 40 dishes from the menu card. Categories keep the card's section names and order, and Half/Full or piece counts are separate dishes.
-- **Dish photos:** `public/dishes/*.webp`, 400×300.
-  - Hero crops of the 5 real photos with a colour boost.
-  - For dishes without a photo: food artwork cropped from the menu card.
-  - `Dish.image` is either a built-in path or an uploaded data URL (validated in `core/validate.ts#isDishImage`).
+- **Dish photos:** removed at the owner's request (see §0b).
 
 ## 0b. Changes requested after launch
 
@@ -38,6 +35,9 @@ services. All data lives in the browser (IndexedDB). Deploys free on Netlify or 
   - `.github/workflows/deploy.yml` tests, builds and publishes on every push to `main`.
   - Pages can't send headers, so the CSP is also injected as a `<meta>` tag at build time.
   - `npm run serve:dist -- 4176 --pages /repo/` imitates Pages locally.
+- **Dish photos removed:** the Billing grid shows compact text tiles, so about twice as many dishes fit on a phone screen. Photos stored by older versions are dropped at startup, and old backups that contain them still restore without them.
+- **Receipts, not invoices:** new numbers are `RCPT-YYYYMM-0001`. Old `INV-` bills stay valid and searchable and share the monthly counter, so numbering carries on (`INV-…-0017` is followed by `RCPT-…-0018`).
+- **Share PDF:** the receipt preview sends a PDF shaped like a portrait phone screen (360 × 780 pt) through the Web Share API, so WhatsApp can be picked in the share menu; where there's no share menu it downloads. It's drawn on a canvas at 3× (so ₹ and emoji use the device's fonts) and saved as JPEG pages by the hand-written `core/pdf.ts`. Long bills get more pages of the same size, and rows are never split.
 
 ## 1. Design source
 
@@ -138,7 +138,7 @@ Indexes: `category`, `active`.
 - **Hard delete** is allowed only if the dish never appeared in any bill.
   This is tracked with a `usedInBills` flag, which is set when a bill is saved.
 
-### Store `bills` (key: `billNo`, e.g. `INV-202609-0001`)
+### Store `bills` (key: `billNo`, e.g. `RCPT-202609-0001`)
 
 ```ts
 {
@@ -211,7 +211,7 @@ Indexes: `createdAt`, `monthKey`, `status`, `totalPaise`.
 This is a single `readwrite` transaction over `counters`, `bills`, `monthlyStats`, `meta`,
 and `menu`:
 
-1. Read `counters[monthKey]`, increment it, and write it back. This produces `INV-YYYYMM-NNNN`.
+1. Read `counters[monthKey]`, increment it, and write it back. This produces `RCPT-YYYYMM-NNNN`.
 2. Draw the next cheesy line from the shuffle bag and advance the bag.
 3. `add()` the bill. Because `add()` fails on a duplicate key, a duplicate bill number is impossible.
 4. Update `monthlyStats[monthKey]` incrementally.
@@ -221,7 +221,7 @@ IndexedDB transactions are atomic: either every step commits or none does. Two t
 once are serialized by the browser, so a bill number can never repeat. The month resets
 naturally, because a new `monthKey` starts at 0.
 
-- **Bill numbers past 9999 in a month:** the number widens to `INV-202609-10000` rather than wrapping around.
+- **Bill numbers past 9999 in a month:** the number widens to `RCPT-202609-10000` rather than wrapping around.
 
 ### Void
 
@@ -259,7 +259,7 @@ naturally, because a new `monthKey` starts at 0.
 **Adding items**
 - Tap a dish card to add 1.
 - The cart line has `−` / `+` buttons and a numeric input. Quantity is clamped to an integer in 1–999.
-  `−` at 1 asks you to remove the line.
+  `−` at 1 removes the line.
 
 **Order details**
 - Order type segmented control: Dine-in shows a Table no. field. Takeaway and Delivery do not.
@@ -321,10 +321,10 @@ The receipt is rendered with DOM APIs into `#print-root`.
 - `window.print()` opens the print dialog, which also offers "Save as PDF".
 - Thermal paper uses `@page { size: 80mm auto; margin: 0 }`.
 
-**WhatsApp**
-- The button opens `https://wa.me/?text=<encoded summary>` in a new tab.
-  The summary has the bill no, items, total, and the cheesy line.
-- This is a user-initiated link, not a network call made by the app.
+**Share PDF (WhatsApp)**
+- Builds a PDF shaped like a portrait phone screen (360 × 780 pt) and hands it to the device's share menu (Web Share API), where WhatsApp is picked. A wa.me link can only carry text, never a file.
+- Where there is no share menu (some desktop browsers), the PDF downloads instead.
+- The app uploads nothing: the file goes straight to the share menu.
 
 **Reprint**
 - Any bill in Reports can be reprinted. Reprints use the stored `cheesyLine` and the item snapshots.
@@ -520,7 +520,7 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 │  ├─ sw.ts
 │  ├─ styles/  tokens.css  base.css  layout.css  components.css  print.css
 │  ├─ core/    money.ts totals.ts billNo.ts shuffleBag.ts topK.ts dates.ts
-│  │           xlsx.ts validate.ts image.ts debounce.ts
+│  │           xlsx.ts pdf.ts validate.ts image.ts debounce.ts
 │  ├─ db/      db.ts (open + upgrade) types.ts menuRepo.ts billRepo.ts
 │  │           statsRepo.ts settingsRepo.ts linesRepo.ts backup.ts
 │  ├─ data/    cheesyLines.ts  sampleMenu.ts
@@ -529,7 +529,7 @@ Permissions-Policy: camera=(), microphone=(), geolocation=()
 │     ├─ components/  toast.ts modal.ts banner.ts nav.ts
 │     ├─ billing/     billingView.ts menuGrid.ts cart.ts shortcuts.ts
 │     ├─ menu/        menuView.ts dishForm.ts
-│     ├─ receipt/     receipt.ts print.ts whatsapp.ts
+│     ├─ receipt/     receipt.ts receiptView.ts receiptPdf.ts
 │     ├─ settings/    settingsView.ts linesEditor.ts backupView.ts
 │     └─ reports/     (lazy) reportsView.ts filters.ts query.ts kpis.ts
 │                     charts.ts billList.ts exportCsv.ts

@@ -5,13 +5,13 @@ there's **no login, no server, no monthly fee**, and **your data never leaves th
 
 - **Billing:** tap dishes to add them. Supports Dine-in (with table no.), Takeaway or Delivery,
   flat ₹ or % discounts, Cash / UPI, and an optional customer name.
-- **Bill numbers:** `INV-YYYYMM-0001`. They restart every month and can never repeat.
+- **Receipt numbers:** `RCPT-YYYYMM-0001`. They restart every month and can never repeat. Bills saved before this change keep their `INV-` numbers, and the month's count carries on.
 - **Receipts:**
   - 58 mm and 80 mm thermal paper, or A4. "Save as PDF" works from the print dialog.
   - The round Tikka Bites logo, name, address and phone at the top. You can upload a different logo or turn the logo off.
   - A cheesy one-liner at the bottom. 40 are built in, you can add your own, and none repeats until all have been used.
-  - A **Share on WhatsApp** button.
-- **Menu:** comes with the full **Tikka Bites menu**: 40 dishes in the menu card's 8 sections (Grill Gali, Lapete Mein, Burger Adda, Toast Ka Dosh, Murga Bole Kukdoo Koo, Aloo Ke Laloo, Mitthu Miya, Thanda Matter), each with a photo. You can add, edit and disable dishes and upload your own dish photos. A dish that appears in old bills is hidden when deleted, never erased.
+  - **Share PDF:** sends the receipt as a PDF shaped like a portrait phone screen through the phone's share menu, where you pick WhatsApp. Long bills continue on more pages of the same size. Where there's no share menu (some computers), the PDF downloads instead.
+- **Menu:** comes with the full **Tikka Bites menu**: 40 dishes in the menu card's 8 sections (Grill Gali, Lapete Mein, Burger Adda, Toast Ka Dosh, Murga Bole Kukdoo Koo, Aloo Ke Laloo, Mitthu Miya, Thanda Matter). Dishes show as compact text tiles (no photos), so more fit on a phone screen. You can add, edit and disable dishes. A dish that appears in old bills is hidden when deleted, never erased.
 - **Brand:** the round Tikka Bites logo prints on every receipt, and the wide logo sits in the app header. Light and dark themes use the logo's flame red, charcoal black and white. The theme follows your device, or you can pick one (the button in the nav, or *Settings → Appearance*).
 - **Reports:**
   - Revenue, bill count, average bill, top and least-sold dishes, sales by category, payment split, peak hours, best weekdays, and a month-over-month comparison.
@@ -99,12 +99,12 @@ Open your site's URL, then:
 - **Thermal printers (58/80 mm):** in the print dialog, choose your printer, set **Margins: None**,
   and turn off **Headers and footers**. Pick the matching paper width under *Settings → Receipt paper*.
   You can also switch width per print in the receipt preview.
-- **PDF:** choose **Save as PDF** as the printer.
+- **PDF:** use **Share PDF** in the receipt preview for a phone-size PDF, or choose **Save as PDF** as the printer for a paper-size one.
 
 ## Your data
 
 Everything lives in this browser's built-in database (IndexedDB), on this device only.
-- Clearing the browser's site data, or using a different browser or device, means starting empty.
+- Clearing the browser's site data, or using a different browser or device, means starting empty: another phone has its own bills and its own receipt numbers.
 - Use **Settings → Download backup** regularly (the app reminds you weekly) and keep the file
   somewhere safe, e.g. email it to yourself.
 - **Restore** replaces everything with the backup. The file is checked strictly first, so a damaged

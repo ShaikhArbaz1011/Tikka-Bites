@@ -28,11 +28,12 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 ## Branding (Tikka Bites)
 - Use colour tokens from `src/styles/tokens.css` only. Button hover uses `--accent-hover`; red text uses `--accent-strong`. Check new colour pairs for WCAG AA in both themes.
 - The menu keeps menu-card order (categories by first-added id), so don't sort categories alphabetically.
-- Dish photos: built-in ones are `/dishes/<slug>.webp` (400×300 WEBP); uploaded ones go through `imageToDataUrl`.
+- No dish photos (removed at the owner's request); don't add them back. Photos stored by older versions are dropped at startup (`dropLegacyDishPhotos` in `db/db.ts`), and old backups that contain them still restore.
 
 ## Scope decisions (owner requests)
 - Payment modes are **Cash and UPI only**. Don't add Card back; `'card'` exists only so old bills stay readable.
 - **Excel `.xlsx` is the only export format** (`src/core/xlsx.ts`). Don't add CSV back.
+- Receipts are shared as a **phone-size PDF** (360 × 780 pt, portrait) through the Web Share API, with a download fallback. It's drawn on a canvas (`ui/receipt/receiptPdf.ts`) and written by the hand-made `core/pdf.ts`. Don't add a PDF library.
 - Every date uses local time (IST). New date logic needs a case in `tests/unit/month.test.ts`.
 - Asset paths must work under a sub-folder (GitHub Pages). Use `assetUrl()` for built-in images and never hard-code `/…` URLs.
 
@@ -45,7 +46,7 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 - Keep the headers in `netlify.toml` and `vercel.json` identical.
 
 ## Data integrity
-- Bill numbers (`INV-YYYYMM-NNNN`) are generated only inside the `saveBill` IndexedDB transaction.
+- Receipt numbers (`RCPT-YYYYMM-NNNN`) are generated only inside the `saveBill` IndexedDB transaction. Old `INV-` numbers stay valid everywhere and share the monthly counter.
 - Every bill save or void must update `monthlyStats` in the **same** transaction.
 - Dishes that appear in any bill are soft-deleted only. Voided bills are kept but excluded from totals.
 
