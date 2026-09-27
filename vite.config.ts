@@ -2,6 +2,18 @@ import { defineConfig, type Plugin } from 'vitest/config';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { createHash } from 'node:crypto';
+import { resolveCloudConfig, connectSrc, NO_CLOUD } from './src/core/cloudConfig';
+
+/**
+ * Shared database settings (cloud.config.json, or VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).
+ * Unit tests always run in local-only mode unless a test switches it on itself.
+ */
+const CLOUD = process.env['VITEST']
+  ? NO_CLOUD
+  : resolveCloudConfig(JSON.parse(readFileSync('cloud.config.json', 'utf8')), {
+      url: process.env['VITE_SUPABASE_URL'],
+      anonKey: process.env['VITE_SUPABASE_ANON_KEY'],
+    });
 
 /**
  * Emit sw.js with the exact list of built files to precache (no Workbox needed).
@@ -41,9 +53,11 @@ function serviceWorker(): Plugin {
  * (GitHub Pages). Netlify/Vercel also send it as a header (netlify.toml /
  * vercel.json), which adds frame-ancestors (not allowed in <meta>).
  * Build only: the dev server injects inline styles for hot reload.
+ * connect-src names the ONE shared database (if any), so the page can talk to
+ * nothing else. (The Netlify/Vercel header allows https://*.supabase.co; the browser
+ * enforces both, so the effective rule is still this exact address.)
  */
-const META_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests";
+const META_CSP = `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src ${connectSrc(CLOUD)}; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests`;
 
 function metaCsp(): Plugin {
   return {
@@ -57,6 +71,10 @@ export default defineConfig({
   // Relative base: the same build works on Netlify/Vercel (site root) and GitHub Pages (/<repo>/).
   base: './',
   plugins: [serviceWorker(), metaCsp()],
+  define: {
+    __CLOUD_URL__: JSON.stringify(CLOUD.url),
+    __CLOUD_KEY__: JSON.stringify(CLOUD.anonKey),
+  },
   build: {
     target: 'es2022',
     modulePreload: { polyfill: false },
