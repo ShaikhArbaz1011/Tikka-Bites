@@ -1,6 +1,6 @@
 \set ON_ERROR_STOP on
 \echo '11. pull_changes: every change exactly once, page by page, and nothing after the clock'
-select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', false) \g /dev/null
+select set_config('request.jwt.claims', '{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', false) \g :devnull
 do $$
 declare
   since bigint := 0; page jsonb; pages int := 0; first_db text;

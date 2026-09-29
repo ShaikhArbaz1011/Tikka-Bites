@@ -1,13 +1,13 @@
 \set ON_ERROR_STOP on
 select to_char(clock_timestamp() at time zone 'Asia/Kolkata', 'YYYYMM') as m \gset
 \echo '0. only accounts on the staff list get in'
-select public.allow_staff(' Owner@Tikka.test ') \g /dev/null
-select public.allow_staff('counter1@tikka.test') \g /dev/null
-select public.allow_staff('counter2@tikka.test') \g /dev/null
+select public.allow_staff(' Owner@Tikka.test ') \g :devnull
+select public.allow_staff('counter1@tikka.test') \g :devnull
+select public.allow_staff('counter2@tikka.test') \g :devnull
 select t.expect_error($q$select public.allow_staff('nobody@tikka.test')$q$, 'No account with email');
 do $$ begin assert (select count(*) from public.staff) = 3 and exists (select 1 from public.staff where email = 'owner@tikka.test'), 'staff list'; end $$;
 set role authenticated;
-select set_config('request.jwt.claims', '{"sub":"44444444-4444-4444-4444-444444444444","role":"authenticated"}', false) \g /dev/null
+select set_config('request.jwt.claims', '{"sub":"44444444-4444-4444-4444-444444444444","role":"authenticated"}', false) \g :devnull
 select t.expect_error($q$select public.save_bill('{"items":[{"menuId":1,"qty":1,"unitPaise":1}]}')$q$, 'not on the Tikka Bites staff list');
 select t.expect_error($q$select public.pull_changes(0)$q$, 'not on the Tikka Bites staff list');
 select t.expect_error($q$select public.patch_settings('{}')$q$, 'not on the Tikka Bites staff list');
@@ -15,19 +15,20 @@ select t.expect_error($q$select public.void_bill('RCPT-202609-0001', 'test')$q$,
 select t.expect_error($q$select public.import_device_data('[]', '[]', '{}', '[]')$q$, 'not on the Tikka Bites staff list');
 select t.expect_error($q$insert into public.menu (name, category, price_paise, is_veg) values ('x', 'y', 1, true)$q$, 'row-level security');
 reset role;
-select setval('public.menu_id_seq', 1, false) \g /dev/null -- the refused insert used up id 1 (harmless gap); keep ids simple below
+-- the refused insert used up id 1 (harmless gap); keep ids simple below
+select setval('public.menu_id_seq', 1, false) \g :devnull
 set role authenticated;
-select set_config('request.jwt.claims', '{"sub":"44444444-4444-4444-4444-444444444444","role":"authenticated"}', false) \g /dev/null
+select set_config('request.jwt.claims', '{"sub":"44444444-4444-4444-4444-444444444444","role":"authenticated"}', false) \g :devnull
 select t.expect_error($q$select public.allow_staff('stranger@example.com')$q$, 'permission denied');
 select t.expect_error($q$select * from public.staff$q$, 'permission denied');
 select t.expect_error($q$insert into public.staff (user_id, email) values (auth.uid(), 'me')$q$, 'permission denied');
-select set_config('request.jwt.claims', '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated","is_anonymous":true}', false) \g /dev/null
+select set_config('request.jwt.claims', '{"sub":"55555555-5555-5555-5555-555555555555","role":"authenticated","is_anonymous":true}', false) \g :devnull
 select t.expect_error($q$select public.pull_changes(0)$q$, 'not on the Tikka Bites staff list');
 do $$ begin assert not public.is_staff(), 'anonymous sign-in is not staff'; end $$;
 reset role;
 \echo '1. staff add dishes; numbering starts at 0001; money math matches the app'
 set role authenticated;
-select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false) \g /dev/null
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false) \g :devnull
 insert into public.menu (name, category, price_paise, is_veg) values ('Full Chicken', 'Grill Gali', 45000, false), ('Masala Fries', 'Aloo Ke Laloo', 12050, true);
 do $$
 declare m text := to_char(clock_timestamp() at time zone 'Asia/Kolkata', 'YYYYMM'); b jsonb;

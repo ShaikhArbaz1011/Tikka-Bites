@@ -9,7 +9,7 @@ do $$ begin
 end $$;
 \echo '7. revs follow commit order, so a device fetches exactly what changed'
 set role authenticated;
-select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false) \g /dev/null
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false) \g :devnull
 update public.menu set price_paise = 46000 where id = 1;
 do $$ begin assert (select rev from public.menu where id = 1) > (select max(rev) from public.bills), 'a later change gets a higher rev'; end $$;
 reset role;

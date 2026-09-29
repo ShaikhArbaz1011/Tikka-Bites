@@ -11,9 +11,13 @@
 --  * Only accounts on the staff list can read or change anything, even if public
 --    sign-ups were left on by mistake. After creating an account under
 --    Authentication → Users, give it access here with:
---        select public.allow_staff('counter@example.com');
+--        select public.allow_staff('counter@example.com', 'counter1');
+--    The second value is the short User ID typed on the sign-in screen.
 --  * Bills can't be written directly: save_bill() / void_bill() check every
 --    bill against the menu and issue the receipt number.
+--  * Only this month and the 2 before it are kept: purge_old_months() deletes
+--    older months (every night at 00:05 India time when pg_cron is available,
+--    and whenever the app starts).
 -- =============================================================================
 
 -- ---------- Change counter ----------------------------------------------------
@@ -55,6 +59,12 @@ create table if not exists public.staff (
   added_at timestamptz not null default now()
 );
 
+-- Short User ID typed on the sign-in screen (the account itself still has an email).
+alter table public.staff add column if not exists username text;
+create unique index if not exists staff_username on public.staff (username);
+alter table public.staff drop constraint if exists staff_username_format;
+alter table public.staff add constraint staff_username_format check (username is null or username ~ '^[a-z0-9][a-z0-9._-]{1,29}$');
+
 create or replace function public.is_staff() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.staff where user_id = auth.uid())
@@ -70,28 +80,54 @@ begin
 end $$;
 
 -- Owner only (SQL Editor): give / take away access.
-create or replace function public.allow_staff(p_email text) returns text
+--   select public.allow_staff('counter@example.com', 'counter1');  -- User ID "counter1"
+-- Running it again for the same email changes that person's User ID.
+drop function if exists public.allow_staff(text); -- replaced by the version with a User ID
+create or replace function public.allow_staff(p_email text, p_username text default null) returns text
 language plpgsql security definer set search_path = public as $$
 declare
   v_email text := lower(btrim(p_email));
+  v_user text := nullif(lower(btrim(coalesce(p_username, ''))), '');
   v_id uuid;
 begin
   select id into v_id from auth.users where lower(email) = v_email;
   if v_id is null then
     raise exception 'No account with email %. Create it first: Authentication → Users → Add user.', v_email;
   end if;
-  insert into public.staff (user_id, email) values (v_id, v_email)
-    on conflict (user_id) do update set email = excluded.email;
-  return 'Staff access given to ' || v_email;
+  if v_user is not null and v_user !~ '^[a-z0-9][a-z0-9._-]{1,29}$' then
+    raise exception 'User ID must be 2–30 characters: small letters, numbers, dot, dash or underscore (e.g. counter1)';
+  end if;
+  if v_user is not null and exists (select 1 from public.staff where username = v_user and user_id <> v_id) then
+    raise exception 'User ID % is already used by someone else', v_user;
+  end if;
+  insert into public.staff as s (user_id, email, username) values (v_id, v_email, v_user)
+    on conflict (user_id) do update set email = excluded.email, username = coalesce(excluded.username, s.username);
+  return 'Staff access given to ' || v_email
+    || coalesce(' (User ID: ' || (select username from public.staff where user_id = v_id) || ')', ' (no User ID yet: sign in with the email)');
 end $$;
 
+-- Take access away by email or User ID.
 create or replace function public.remove_staff(p_email text) returns text
 language plpgsql security definer set search_path = public as $$
+declare v_who text := lower(btrim(p_email));
 begin
-  delete from public.staff where email = lower(btrim(p_email));
-  if not found then return 'Nobody with email ' || lower(btrim(p_email)) || ' was on the staff list'; end if;
-  return 'Staff access removed from ' || lower(btrim(p_email)) || ' (they are signed out within an hour)';
+  delete from public.staff where email = v_who or username = v_who;
+  if not found then return 'Nobody called ' || v_who || ' was on the staff list'; end if;
+  return 'Staff access removed from ' || v_who || ' (they are signed out within an hour)';
 end $$;
+
+-- The sign-in screen turns a User ID into the account's email (null if unknown).
+create or replace function public.login_email(p_username text) returns text
+language sql stable security definer set search_path = public as $$
+  select email from public.staff where username = lower(btrim(p_username))
+$$;
+
+-- ---------- Keep 3 months -----------------------------------------------------------
+-- The oldest month still kept: this month (India time) and the 2 before it.
+create or replace function public.keep_from_month() returns text
+language sql stable set search_path = public as $$
+  select to_char(date_trunc('month', now() at time zone 'Asia/Kolkata') - interval '2 months', 'YYYYMM')
+$$;
 
 -- ---------- Tables --------------------------------------------------------------
 create table if not exists public.menu (
@@ -294,6 +330,7 @@ begin
     'dbId', v_clock.db_id,
     'ready', exists (select 1 from public.settings),
     'importOpen', v_clock.import_open,
+    'keepFrom', public.keep_from_month(),
     'more', v_count = v_limit,
     -- Full page: continue after its last row. Otherwise this page holds every change
     -- up to the clock (same snapshot), so the device is now up to date.
@@ -303,6 +340,10 @@ end $$;
 -- ---------- save_bill: check a bill and give it the next receipt number ----------
 -- Money math is the same integer math as src/core/money.ts and totals.ts.
 -- Time is the server's clock in India time, so every device agrees on the month.
+-- Offline bills ("offline": true) were made while a phone had no internet and are
+-- uploaded later. They keep the time of the sale (so they land in the right month),
+-- the price actually charged (the menu may have changed since) and the temporary
+-- number printed on the paper receipt ("printedAs", e.g. OFF-K7Q-0003).
 create or replace function public.save_bill(p_bill jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
@@ -333,6 +374,9 @@ declare
   v_no text;
   v_bill jsonb;
   v_ref uuid;
+  v_offline boolean := coalesce(p_bill -> 'offline' = 'true'::jsonb, false);
+  v_at_ms bigint;
+  v_printed text;
 begin
   perform public.require_staff();
   if jsonb_typeof(p_bill) is distinct from 'object' or jsonb_typeof(p_bill -> 'items') is distinct from 'array'
@@ -353,12 +397,35 @@ begin
     end if;
   end if;
 
+  if v_offline then
+    if coalesce(p_bill ->> 'createdAt', '') !~ '^[0-9]{12,14}$' then
+      raise exception 'Invalid time on an offline bill' using errcode = 'P0001';
+    end if;
+    v_at_ms := (p_bill ->> 'createdAt')::bigint;
+    if v_at_ms > public.now_ms() + 600000 then
+      raise exception 'This offline bill has a time in the future. Check the phone''s date and time.' using errcode = 'P0001';
+    end if;
+    if v_at_ms < public.now_ms() - 35::bigint * 86400000 then
+      raise exception 'This offline bill is more than 35 days old and can''t be uploaded.' using errcode = 'P0001';
+    end if;
+    v_now := to_timestamp(v_at_ms / 1000.0);
+    v_local := v_now at time zone 'Asia/Kolkata';
+    v_month := to_char(v_local, 'YYYYMM');
+    if v_month < public.keep_from_month() then
+      raise exception 'This offline bill is from a month that has already been cleared (only 3 months are kept).' using errcode = 'P0001';
+    end if;
+    v_printed := p_bill ->> 'printedAs';
+    if v_printed is not null and v_printed !~ '^OFF-[A-Z0-9]{3,6}-[0-9]{4,}$' then
+      raise exception 'Invalid offline bill number' using errcode = 'P0001';
+    end if;
+  end if;
+
   for v_item in select value from jsonb_array_elements(p_bill -> 'items') loop
     if (v_item ->> 'menuId') !~ '^[0-9]{1,15}$' or (v_item ->> 'qty') !~ '^[0-9]{1,3}$' or (v_item ->> 'unitPaise') !~ '^[0-9]{1,9}$' then
       raise exception 'Invalid item in the bill' using errcode = 'P0001';
     end if;
     select * into v_dish from public.menu where id = (v_item ->> 'menuId')::bigint;
-    if not found or v_dish.deleted then
+    if not found or (v_dish.deleted and not v_offline) then
       raise exception 'A dish in this bill is no longer on the menu. Please check the bill and save again.' using errcode = 'P0001';
     end if;
     if v_dish.id = any (v_ids) then
@@ -368,7 +435,22 @@ begin
     if v_qty not between 1 and 999 then
       raise exception 'Quantity must be a whole number 1–999' using errcode = 'P0001';
     end if;
-    if (v_item ->> 'unitPaise')::integer <> v_dish.price_paise then
+    if v_offline then
+      -- Already sold on the offline phone: keep what was charged and printed.
+      if (v_item ->> 'unitPaise')::bigint not between 1 and 10000000 then
+        raise exception 'Invalid item in the bill' using errcode = 'P0001';
+      end if;
+      v_dish.price_paise := (v_item ->> 'unitPaise')::integer;
+      if jsonb_typeof(v_item -> 'name') = 'string' and char_length(v_item ->> 'name') between 1 and 60 then
+        v_dish.name := v_item ->> 'name';
+      end if;
+      if jsonb_typeof(v_item -> 'category') = 'string' and char_length(v_item ->> 'category') between 1 and 30 then
+        v_dish.category := v_item ->> 'category';
+      end if;
+      if jsonb_typeof(v_item -> 'isVeg') = 'boolean' then
+        v_dish.is_veg := (v_item ->> 'isVeg')::boolean;
+      end if;
+    elsif (v_item ->> 'unitPaise')::integer <> v_dish.price_paise then
       raise exception 'The price of % was changed on another device. Please check the bill and save again.', v_dish.name
         using errcode = 'P0001';
     end if;
@@ -424,7 +506,7 @@ begin
 
   v_bill := jsonb_strip_nulls(jsonb_build_object(
     'billNo', v_no,
-    'createdAt', floor(extract(epoch from v_now) * 1000)::bigint,
+    'createdAt', coalesce(v_at_ms, floor(extract(epoch from v_now) * 1000)::bigint),
     'monthKey', v_month,
     'hour', extract(hour from v_local)::integer,
     'weekday', extract(dow from v_local)::integer,
@@ -443,6 +525,7 @@ begin
     'hasVeg', v_veg,
     'hasNonVeg', v_nonveg,
     'cheesyLine', v_cheesy,
+    'printedAs', v_printed,
     'status', 'paid'));
   update public.menu set used_in_bills = true where id = any (v_ids) and not used_in_bills;
   insert into public.bills (bill_no, created_at, month_key, status, data, client_ref)
@@ -525,11 +608,14 @@ begin
   insert into public.bills (bill_no, created_at, month_key, status, data)
   select b ->> 'billNo', (b ->> 'createdAt')::bigint, b ->> 'monthKey', b ->> 'status', b
     from jsonb_array_elements(p_bills) b
+   where b ->> 'monthKey' >= public.keep_from_month() -- only the 3 kept months
   on conflict (bill_no) do nothing;
   get diagnostics v_added = row_count;
   insert into public.counters as c (month_key, last) -- belt and braces; normally already set
   select b ->> 'monthKey', max(substring(b ->> 'billNo' from '-([0-9]+)$')::integer)
-    from jsonb_array_elements(p_bills) b group by 1
+    from jsonb_array_elements(p_bills) b
+   where b ->> 'monthKey' >= public.keep_from_month()
+   group by 1
   on conflict (month_key) do update set last = greatest(c.last, excluded.last);
   return v_added;
 end $$;
@@ -542,10 +628,28 @@ begin
   update public.sync_clock set import_open = false where id = 1;
 end $$;
 
+-- ---------- purge_old_months: delete bills older than the 3 kept months ------------
+-- Runs from pg_cron (no signed-in user) or from the app (staff only). Safe to run often.
+-- Devices delete the same months from their own copy (pull_changes tells them keepFrom).
+create or replace function public.purge_old_months() returns integer
+language plpgsql security definer set search_path = public as $$
+declare
+  v_keep text := public.keep_from_month();
+  v_n integer;
+begin
+  if auth.uid() is not null then perform public.require_staff(); end if;
+  perform 1 from public.sync_clock where id = 1 for update;
+  delete from public.bills where month_key < v_keep;
+  get diagnostics v_n = row_count;
+  delete from public.counters where month_key < v_keep;
+  return v_n;
+end $$;
+
 -- ---------- Who may call what -------------------------------------------------------
 revoke all on function
   public.take_clock(), public.stamp_rev(), public.touch_menu(), public.now_ms(), public.check_settings(jsonb),
-  public.require_staff(), public.allow_staff(text), public.remove_staff(text),
+  public.require_staff(), public.allow_staff(text, text), public.remove_staff(text),
+  public.login_email(text), public.keep_from_month(), public.purge_old_months(),
   public.is_staff(), public.pull_changes(bigint, integer), public.patch_settings(jsonb, text[]),
   public.save_bill(jsonb), public.void_bill(text, text),
   public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import()
@@ -554,8 +658,28 @@ grant execute on function
   public.now_ms(), -- used by column defaults, which run as the caller
   public.is_staff(), public.pull_changes(bigint, integer), public.patch_settings(jsonb, text[]),
   public.save_bill(jsonb), public.void_bill(text, text),
-  public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import()
+  public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import(),
+  public.keep_from_month(), public.purge_old_months()
   to authenticated;
+-- Needed before signing in: turns the typed User ID into the account email.
+grant execute on function public.login_email(text) to anon, authenticated;
 
 -- Remove the earlier 3-argument import (replaced by the 4-argument one above).
 drop function if exists public.import_device_data(jsonb, jsonb, jsonb);
+
+-- ---------- Nightly clean-up (pg_cron) ------------------------------------------------
+-- Supabase has pg_cron. Every night at 00:05 India time (18:35 UTC) delete months older
+-- than the 3 kept ones. Where pg_cron isn't available the app does the same at start-up.
+do $$
+begin
+  if exists (select 1 from pg_available_extensions where name = 'pg_cron') then
+    begin
+      create extension if not exists pg_cron with schema pg_catalog;
+      perform cron.schedule('tikka-bites-keep-3-months', '35 18 * * *', 'select public.purge_old_months()');
+    exception when others then
+      raise notice 'Could not schedule the nightly clean-up (%). The app still clears old months itself.', sqlerrm;
+    end;
+  else
+    raise notice 'pg_cron is not available here: the app clears old months itself.';
+  end if;
+end $$;

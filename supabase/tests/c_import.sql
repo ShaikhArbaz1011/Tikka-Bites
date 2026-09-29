@@ -1,9 +1,9 @@
 \set ON_ERROR_STOP on
 select to_char(clock_timestamp() at time zone 'Asia/Kolkata', 'YYYYMM') as m \gset
 \echo '9. moving the first phone''s data in: ids kept, numbering continues after old INV- bills'
-select public.allow_staff('owner@tikka.test') \g /dev/null
+select public.allow_staff('owner@tikka.test') \g :devnull
 set role authenticated;
-select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false) \g /dev/null
+select set_config('request.jwt.claims', '{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', false) \g :devnull
 select t.expect_error($q$select public.patch_settings('{"phone":"1"}')$q$, 'not set up yet');
 select t.expect_error($q$select public.import_device_data('[]', '[]', '{"name":"","currencySymbol":"₹","receiptWidth":"80","roundOff":true}', '[]')$q$, 'Invalid settings');
 do $$ begin assert not exists (select 1 from public.settings), 'a refused import writes nothing'; end $$;
@@ -12,7 +12,7 @@ select public.import_device_data(
     {"id":9,"name":"Water","nameLower":"water","category":"Thanda Matter","pricePaise":1000,"isVeg":true,"active":true,"deleted":false,"createdAt":1,"updatedAt":2}]',
   '[{"id":1,"text":"Thank you for being the naan to our curry 🫓","builtIn":true,"active":true},{"id":4,"text":"Mine","active":false}]',
   '{"name":"Tikka Bites","address":"","phone":"9137582060","currencySymbol":"₹","receiptWidth":"80","roundOff":true,"printLogo":true,"lastBackupAt":1700000000000}',
-  jsonb_build_array(jsonb_build_object('monthKey', :'m', 'last', 18), jsonb_build_object('monthKey', '202401', 'last', 7))) \g /dev/null
+  jsonb_build_array(jsonb_build_object('monthKey', :'m', 'last', 18), jsonb_build_object('monthKey', '202401', 'last', 7))) \g :devnull
 do $$
 declare m text := to_char(clock_timestamp() at time zone 'Asia/Kolkata', 'YYYYMM'); b jsonb;
 begin
@@ -27,8 +27,10 @@ select public.import_bills(jsonb_build_array(
   jsonb_build_object('billNo', 'RCPT-' || :'m' || '-0018', 'createdAt', 2, 'monthKey', :'m', 'status', 'void'))) as added \gset
 select public.import_bills(jsonb_build_array(
   jsonb_build_object('billNo', 'RCPT-' || :'m' || '-0018', 'createdAt', 2, 'monthKey', :'m', 'status', 'void'))) as again \gset
-select t.ok(:added = 2 and :again = 0, 'uploading the same bills twice is harmless') \g /dev/null
-select public.finish_import() \g /dev/null
+select t.ok(:added = 2 and :again = 0, 'uploading the same bills twice is harmless') \g :devnull
+select public.import_bills(jsonb_build_array(jsonb_build_object('billNo', 'INV-202001-0001', 'createdAt', 1, 'monthKey', '202001', 'status', 'paid'))) as old_month \gset
+select t.ok(:old_month = 0, 'bills older than the 3 kept months are not imported') \g :devnull
+select public.finish_import() \g :devnull
 do $$
 declare m text := to_char(clock_timestamp() at time zone 'Asia/Kolkata', 'YYYYMM'); b jsonb; new_id bigint; line_id bigint;
 begin
