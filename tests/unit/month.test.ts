@@ -208,3 +208,42 @@ describe('3-month limit (keep this month and the 2 before it)', () => {
     expect(retentionWarning(ist(2028, 2, 22))).toBeNull();
   });
 });
+
+describe('3-month clean-up on the phone deletes exactly one month at a time', () => {
+  it('May–October bills: mid-Sep deletes May+June; 1 Oct deletes only July; others unchanged', async () => {
+    const { purgeOldMonths } = await import('../../src/db/retention');
+    const { keepFromMonth } = await import('../../src/core/dates');
+    const perMonth: Record<string, number> = { '5': 2, '6': 3, '7': 4, '8': 5, '9': 6, '10': 1 };
+    for (const [m, n] of Object.entries(perMonth)) {
+      for (let k = 0; k < n; k++) await saveBill(bill({ items: [{ menuId: dish, qty: 1 + k }] }), ist(2026, Number(m), 10 + k, 13));
+    }
+    // One July bill is voided: it must go with July too.
+    const july = await listBillsPage(monthRange(2026, 6), 50);
+    await voidBill(july.bills[0]!.billNo, 'test void');
+    const monthsLeft = async () => {
+      const out: Record<string, number> = {};
+      for (let m = 5; m <= 10; m++) {
+        const n = (await listBillsPage(monthRange(2026, m - 1), 50)).bills.length;
+        if (n) out[String(m)] = n;
+      }
+      return out;
+    };
+    const statsFor = async (m: number) => runReport({ ...base, range: monthRange(2026, m - 1) });
+    const augBefore = (await statsFor(8)).stats;
+    const sepBefore = (await statsFor(9)).stats;
+
+    expect(await purgeOldMonths(keepFromMonth(ist(2026, 9, 15, 12)))).toBe(5); // May 2 + June 3
+    expect(await monthsLeft()).toEqual({ '7': 4, '8': 5, '9': 6, '10': 1 });
+
+    expect(await purgeOldMonths(keepFromMonth(ist(2026, 9, 30, 23, 59, 59)))).toBe(0); // a second early: nothing
+    expect(await purgeOldMonths(keepFromMonth(ist(2026, 10, 1, 0, 0)))).toBe(4); // exactly July, voided one included
+    expect(await monthsLeft()).toEqual({ '8': 5, '9': 6, '10': 1 });
+    expect(await getMonthlyStats('202607')).toBeUndefined(); // July's totals are gone too
+    expect((await statsFor(8)).stats).toEqual(augBefore); // August's report is exactly the same
+    expect((await statsFor(9)).stats).toEqual(sepBefore);
+
+    expect(await purgeOldMonths(keepFromMonth(ist(2026, 10, 20)))).toBe(0); // again: nothing
+    // Numbering in a kept month carries on after the clean-up.
+    expect((await saveBill(bill(), ist(2026, 10, 21, 12))).billNo).toBe('RCPT-202610-0002');
+  });
+});

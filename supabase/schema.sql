@@ -123,10 +123,17 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 -- ---------- Keep 3 months -----------------------------------------------------------
--- The oldest month still kept: this month (India time) and the 2 before it.
+-- The oldest month still kept at a given moment: that month (India time) and the 2
+-- before it. E.g. any time in September keeps July, August, September; from
+-- 1 October 00:00 India time (= 30 September 18:30 UTC) it keeps August onwards.
+create or replace function public.keep_from_month_at(p_at timestamptz) returns text
+language sql stable set search_path = public as $$
+  select to_char(date_trunc('month', p_at at time zone 'Asia/Kolkata') - interval '2 months', 'YYYYMM')
+$$;
+
 create or replace function public.keep_from_month() returns text
 language sql stable set search_path = public as $$
-  select to_char(date_trunc('month', now() at time zone 'Asia/Kolkata') - interval '2 months', 'YYYYMM')
+  select public.keep_from_month_at(now())
 $$;
 
 -- ---------- Tables --------------------------------------------------------------
@@ -631,18 +638,28 @@ end $$;
 -- ---------- purge_old_months: delete bills older than the 3 kept months ------------
 -- Runs from pg_cron (no signed-in user) or from the app (staff only). Safe to run often.
 -- Devices delete the same months from their own copy (pull_changes tells them keepFrom).
+-- Internal: delete every month before p_keep (YYYYMM). Owner / nightly job only, never
+-- callable by staff: the app can only ask for the normal rule (purge_old_months below),
+-- so nobody can wipe data by passing a date in the future.
+create or replace function public.purge_months_before(p_keep text) returns integer
+language plpgsql security definer set search_path = public as $$
+declare v_n integer;
+begin
+  if coalesce(p_keep, '') !~ '^[0-9]{4}(0[1-9]|1[0-2])$' then
+    raise exception 'purge_months_before needs a month like 202607' using errcode = 'P0001';
+  end if;
+  perform 1 from public.sync_clock where id = 1 for update;
+  delete from public.bills where month_key < p_keep;
+  get diagnostics v_n = row_count;
+  delete from public.counters where month_key < p_keep;
+  return v_n;
+end $$;
+
 create or replace function public.purge_old_months() returns integer
 language plpgsql security definer set search_path = public as $$
-declare
-  v_keep text := public.keep_from_month();
-  v_n integer;
 begin
   if auth.uid() is not null then perform public.require_staff(); end if;
-  perform 1 from public.sync_clock where id = 1 for update;
-  delete from public.bills where month_key < v_keep;
-  get diagnostics v_n = row_count;
-  delete from public.counters where month_key < v_keep;
-  return v_n;
+  return public.purge_months_before(public.keep_from_month());
 end $$;
 
 -- ---------- Who may call what -------------------------------------------------------
@@ -650,6 +667,7 @@ revoke all on function
   public.take_clock(), public.stamp_rev(), public.touch_menu(), public.now_ms(), public.check_settings(jsonb),
   public.require_staff(), public.allow_staff(text, text), public.remove_staff(text),
   public.login_email(text), public.keep_from_month(), public.purge_old_months(),
+  public.keep_from_month_at(timestamptz), public.purge_months_before(text),
   public.is_staff(), public.pull_changes(bigint, integer), public.patch_settings(jsonb, text[]),
   public.save_bill(jsonb), public.void_bill(text, text),
   public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import()
@@ -659,8 +677,8 @@ grant execute on function
   public.is_staff(), public.pull_changes(bigint, integer), public.patch_settings(jsonb, text[]),
   public.save_bill(jsonb), public.void_bill(text, text),
   public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import(),
-  public.keep_from_month(), public.purge_old_months()
-  to authenticated;
+  public.keep_from_month(), public.keep_from_month_at(timestamptz), public.purge_old_months()
+  to authenticated; -- purge_months_before stays owner / nightly-job only
 -- Needed before signing in: turns the typed User ID into the account email.
 grant execute on function public.login_email(text) to anon, authenticated;
 

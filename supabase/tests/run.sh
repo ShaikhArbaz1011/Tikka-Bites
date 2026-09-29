@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 # Where psql throws away output: /dev/null, or NUL for the native Windows psql.
 case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) NULLDEV=NUL ;; *) NULLDEV=/dev/null ;; esac
 q() { psql -X -q -v ON_ERROR_STOP=1 -v devnull="$NULLDEV" "$@"; }
-for db in tb_test tb_test_import; do
+for db in tb_test tb_test_import tb_test_retention; do
   q -d postgres -c "drop database if exists $db" -c "create database $db"
   q -d "$db" -f stub.sql
   q -d "$db" -f ../schema.sql
@@ -30,5 +30,6 @@ q -d tb_test -f b_after_parallel.sql
 q -d tb_test -f d_sync.sql
 q -d tb_test -f e_accounts_offline_retention.sql
 q -d tb_test_import -f c_import.sql
-for db in tb_test tb_test_import; do q -d postgres -c "drop database $db"; done
+q -d tb_test_retention -f f_retention_dates.sql
+for db in tb_test tb_test_import tb_test_retention; do q -d postgres -c "drop database $db"; done
 echo "ALL SCHEMA TESTS PASSED"
