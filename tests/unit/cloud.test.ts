@@ -133,6 +133,15 @@ describe('sign in with a User ID and password', () => {
     expect(await loadSession()).toBeNull();
   });
 
+  it('too many tries or an unconfirmed account: says so (not "wrong password")', async () => {
+    staffLogin();
+    route('POST /auth/v1/token', () => ({ status: 429, json: { code: 429, error_code: 'over_request_rate_limit', msg: 'Request rate limit reached' } }));
+    await expect(signIn('counter1', 'right-pass', NOW)).rejects.toThrow('Too many sign-in tries');
+    route('POST /auth/v1/token', () => ({ status: 400, json: { code: 400, error_code: 'email_not_confirmed', msg: 'Email not confirmed' } }));
+    await expect(signIn('counter1', 'right-pass', NOW)).rejects.toThrow('not confirmed yet');
+    expect(await loadSession()).toBeNull();
+  });
+
   it('signing in with the email skips the look-up', async () => {
     staffLogin();
     await signIn('counter1@tikka.test', 'right-pass', NOW);

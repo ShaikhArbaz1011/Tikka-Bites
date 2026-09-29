@@ -589,7 +589,9 @@ begin
          (d ->> 'createdAt')::bigint, (d ->> 'updatedAt')::bigint
     from jsonb_array_elements(p_menu) d;
   perform setval('public.menu_id_seq', coalesce((select max(id) from public.menu), 0) + 1, false);
-  delete from public.cheesy_lines;
+  -- "where true": Supabase's safeupdate guard refuses a DELETE/UPDATE with no WHERE
+  -- clause on app requests (tests/unit/schema.test.ts checks every statement).
+  delete from public.cheesy_lines where true;
   insert into public.cheesy_lines (id, text, built_in, active)
   select (l ->> 'id')::bigint, l ->> 'text', coalesce((l ->> 'builtIn')::boolean, false), coalesce((l ->> 'active')::boolean, true)
     from jsonb_array_elements(p_lines) l;

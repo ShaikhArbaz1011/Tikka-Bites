@@ -69,8 +69,13 @@ export async function signIn(login: string, password: string, now = Date.now()):
   try {
     t = await request<TokenResponse>('/auth/v1/token?grant_type=password', { body: { email, password } });
   } catch (e) {
-    if (e instanceof CloudError && e.kind !== 'offline') throw new CloudError('Wrong User ID or password.', 'auth', e.status);
-    throw e;
+    if (!(e instanceof CloudError) || e.kind === 'offline') throw e;
+    // Only a refused password says "wrong"; other refusals say what to do.
+    if (e.status === 429) throw new CloudError('Too many sign-in tries. Wait a few minutes and try again.', 'auth', 429);
+    if (/email not confirmed/i.test(e.message)) {
+      throw new CloudError('This account is not confirmed yet. The owner should confirm it in Supabase (Authentication → Users).', 'auth', e.status);
+    }
+    throw new CloudError('Wrong User ID or password.', 'auth', e.status);
   }
   const s = toSession(t, login.trim().toLowerCase(), now);
   await store(s);
