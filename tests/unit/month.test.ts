@@ -185,3 +185,26 @@ describe('month arithmetic', () => {
     expect(excelDate(ist(2028, 2, 29, 12))).toBe(46812);
   });
 });
+
+describe('3-month limit (keep this month and the 2 before it)', () => {
+  it('oldest kept month, across month and year ends (IST)', async () => {
+    const { keepFromMonth } = await import('../../src/core/dates');
+    expect(keepFromMonth(ist(2026, 9, 29, 12))).toBe('202607'); // Sep → keep Jul, Aug, Sep
+    expect(keepFromMonth(ist(2026, 10, 1, 0, 0))).toBe('202608'); // 1 Oct 00:00 → July is gone
+    expect(keepFromMonth(ist(2026, 9, 30, 23, 59, 59, 999))).toBe('202607'); // one ms before: July still kept
+    expect(keepFromMonth(ist(2027, 1, 15))).toBe('202611'); // Jan → keep Nov, Dec, Jan
+    expect(keepFromMonth(ist(2027, 2, 1))).toBe('202612');
+    expect(keepFromMonth(ist(2028, 3, 1))).toBe('202801'); // leap-year March
+  });
+
+  it('reminder shows in the last 7 days of the month, naming the month to be deleted', async () => {
+    const { retentionWarning } = await import('../../src/ui/components/retentionBanner');
+    expect(retentionWarning(ist(2026, 9, 23, 10))).toBeNull(); // 8 days left
+    const w = retentionWarning(ist(2026, 9, 24, 10))!; // 7 days left
+    expect(w.monthKey).toBe('202607'); // July goes on 1 Oct
+    expect(+w.on).toBe(ist(2026, 10, 1));
+    expect(retentionWarning(ist(2026, 12, 31, 23, 0))).toMatchObject({ monthKey: '202610' }); // Oct goes on 1 Jan
+    expect(retentionWarning(ist(2028, 2, 23))).toMatchObject({ monthKey: '202712' }); // Feb 2028 has 29 days
+    expect(retentionWarning(ist(2028, 2, 22))).toBeNull();
+  });
+});

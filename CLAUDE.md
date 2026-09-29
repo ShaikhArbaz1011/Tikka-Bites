@@ -11,7 +11,14 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 - Don't add runtime dependencies beyond `idb` unless PLAN.md is updated with a justification first.
 
 ## Hard constraints
-- There is no login, no accounts, no backend, no paid services, and no external network calls or analytics.
+- **Two modes** (owner request, 29 Sep 2026):
+  - **Local-only** is the default while `cloud.config.json` is empty. There is no login and no network: each phone keeps its own data.
+  - **Shared database** uses Supabase (free plan) when `cloud.config.json` has the URL and anon key.
+    - Everyone signs in with a User ID and password, and fingerprint unlock works through WebAuthn.
+    - The app talks only to that one Supabase project (the CSP `connect-src` is set at build time).
+    - Sync is offline-first: see `supabase/README.md` and `src/cloud/`.
+- No paid services, no analytics, and no other external calls. Cloud code stays lazy-loaded (`src/cloud/boot.ts`); local-only mode must not load it.
+- Never ship or commit the Supabase `service_role` / secret key. `resolveCloudConfig` refuses it.
 - Stack: Vite + vanilla TypeScript (strict). No React or any other UI framework.
 - All data is stored in IndexedDB through `idb`.
 - The initial JS must be **≤ 60 KB gzipped**. `npm run build` enforces this through `scripts/check-size.mjs`.
@@ -46,7 +53,17 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 - Keep the headers in `netlify.toml` and `vercel.json` identical.
 
 ## Data integrity
-- Receipt numbers (`RCPT-YYYYMM-NNNN`) are generated only inside the `saveBill` IndexedDB transaction. Old `INV-` numbers stay valid everywhere and share the monthly counter.
+- Receipt numbers (`RCPT-YYYYMM-NNNN`) come from exactly one place:
+  - Local-only mode: the `saveBill` IndexedDB transaction.
+  - Shared mode: the server's `save_bill()`.
+  - Old `INV-` numbers stay valid everywhere and share the monthly counter.
+- Shared mode, no internet: bills are saved with a temporary `OFF-<phone>-NNNN` number and queued in `meta.outbox`.
+  - They upload as `offline: true`, keeping their sale time and the price charged, and are replaced by the server's bill.
+  - Each sync uploads first, then downloads (so a lost reply is never counted twice).
+- **Only 3 months are kept:** the current month and the 2 before it.
+  - Server: `purge_old_months()` (pg_cron nightly, and on app start).
+  - Every phone: `db/retention.ts#purgeOldMonths`, using `keepFrom` from the server in shared mode.
+  - New date logic needs a case in `tests/unit/month.test.ts`.
 - Every bill save or void must update `monthlyStats` in the **same** transaction.
 - Dishes that appear in any bill are soft-deleted only. Voided bills are kept but excluded from totals.
 
@@ -59,4 +76,8 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 - `npm run dev`: dev server
 - `npm run build`: type-check, build, and size budget check
 - `npm test`: Vitest unit tests
-- `npm run e2e`: Playwright end-to-end tests
+- `npm run e2e`: Playwright end-to-end tests (local-only mode)
+- `npm run e2e:cloud`: shared-database end-to-end tests.
+  - The real app runs against the real SQL through `scripts/fake-supabase.mjs`.
+  - Needs PostgreSQL 15+ (set PGHOST, PGPORT, PGUSER, and PG_BIN if psql isn't on PATH).
+- `bash supabase/tests/run.sh`: SQL tests for `supabase/schema.sql` (same PostgreSQL)

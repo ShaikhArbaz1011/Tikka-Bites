@@ -39,6 +39,36 @@ services. All data lives in the browser (IndexedDB). Deploys free on Netlify or 
 - **Receipts, not invoices:** new numbers are `RCPT-YYYYMM-0001`. Old `INV-` bills stay valid and searchable and share the monthly counter, so numbering carries on (`INV-…-0017` is followed by `RCPT-…-0018`).
 - **Share PDF:** the receipt preview sends a PDF shaped like a portrait phone screen (360 × 780 pt) through the Web Share API, so WhatsApp can be picked in the share menu; where there's no share menu it downloads. It's drawn on a canvas at 3× (so ₹ and emoji use the device's fonts) and saved as JPEG pages by the hand-written `core/pdf.ts`. Long bills get more pages of the same size, and rows are never split.
 
+## 0c. Shared database, sign-in, fingerprint, 3 months (owner request, 29 Sep 2026)
+
+- **Modes:**
+  - Local-only (default, `cloud.config.json` empty): the app is unchanged.
+  - Shared (Supabase URL and anon key set): lazy-loads `src/cloud/`.
+- **Sign-in:** a User ID and password.
+  - `public.login_email(user_id)` turns the User ID into the account email, then the app signs in with Supabase Auth's email/password.
+  - The session is kept in IndexedDB `meta.session` and refreshed automatically.
+  - Accounts are created by the owner in the dashboard, and `allow_staff(email, user_id)` gives access.
+- **Fingerprint:** WebAuthn with the phone's own sensor.
+  - The phone creates a platform credential after the first password sign-in.
+  - Opening the app, or returning after 5 minutes away, asks for it.
+  - The password is always a fallback, and the user-verified flag is checked.
+- **Writes:** go through `src/db/hooks.ts`.
+  - Bills: server-numbered when online; with no internet they get a temporary `OFF-` number and are queued.
+  - Voids, menu, lines and settings: sent to the server (they need the internet).
+  - Screens keep reading the local IndexedDB copy.
+- **Sync** (`src/cloud/sync.ts`):
+  - Upload offline bills, then `pull_changes(rev)` page by page.
+  - Runs at start, when the internet returns, when the app is reopened, and every 30 s.
+  - If the database's `dbId` changes, the phone resets its copy but keeps unsent bills.
+- **Retention:**
+  - Server: `keep_from_month()` / `purge_old_months()` (pg_cron nightly, and called by the app).
+  - Phones: purge with `keepFrom`.
+  - A reminder banner appears in the last 7 days of each month, with an Excel download of the month about to go.
+- **Tests:**
+  - SQL: `supabase/tests`, including `e_accounts_offline_retention.sql`.
+  - Unit: `tests/unit/cloud.test.ts`.
+  - End to end: `tests/e2e-cloud/shared.spec.ts`, where two phones run against the real schema via `scripts/fake-supabase.mjs`.
+
 ## 1. Design source
 
 `/design` does not exist in the repo, and the frontend-design plugin is not

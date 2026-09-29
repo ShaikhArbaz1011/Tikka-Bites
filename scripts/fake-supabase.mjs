@@ -1,0 +1,246 @@
+// A stand-in for Supabase, for end-to-end tests on this PC: the real app talks to
+// it exactly like to Supabase (Auth + PostgREST URLs), and every call runs as real
+// SQL against supabase/schema.sql in a local PostgreSQL, with Supabase's roles
+// (anon / authenticated) and the signed-in user's id, so row-level security and
+// all checks are the real ones.
+//
+// Usage: node scripts/fake-supabase.mjs [port=54321]
+// Needs PostgreSQL 15+ (psql) reachable as a superuser: PGHOST, PGPORT, PGUSER,
+// and PG_BIN (folder with psql) if psql isn't on PATH.
+import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const PORT = Number(process.argv[2] ?? 54321);
+const DB = process.env.FAKE_SUPABASE_DB ?? 'tb_e2e';
+const PSQL = process.env.PG_BIN ? join(process.env.PG_BIN, 'psql') : 'psql';
+export const ANON_KEY = 'anon-key-for-local-e2e-0000000000';
+
+/** Accounts (auth.users in tests/stub.sql) and their passwords. */
+const PASSWORDS = {
+  'owner@tikka.test': 'owner-pass-123',
+  'counter1@tikka.test': 'counter-pass-123',
+  'counter2@tikka.test': 'counter2-pass-123',
+};
+const USER_IDS = {
+  'owner@tikka.test': '11111111-1111-1111-1111-111111111111',
+  'counter1@tikka.test': '22222222-2222-2222-2222-222222222222',
+  'counter2@tikka.test': '33333333-3333-3333-3333-333333333333',
+};
+
+/** Argument types of every SQL function the app calls (PostgREST reads these from the database). */
+const FUNCS = {
+  login_email: { p_username: 'text' },
+  pull_changes: { p_since: 'bigint', p_limit: 'integer' },
+  save_bill: { p_bill: 'jsonb' },
+  void_bill: { p_bill_no: 'text', p_reason: 'text' },
+  patch_settings: { p_set: 'jsonb', p_unset: 'text[]' },
+  purge_old_months: {},
+  import_device_data: { p_menu: 'jsonb', p_lines: 'jsonb', p_settings: 'jsonb', p_counters: 'jsonb' },
+  import_bills: { p_bills: 'jsonb' },
+  finish_import: {},
+};
+const VOID_FUNCS = new Set(['import_device_data', 'finish_import']);
+const TABLES = {
+  menu: ['name', 'category', 'price_paise', 'is_veg', 'active', 'deleted'],
+  cheesy_lines: ['text', 'active', 'removed'],
+};
+
+const tokens = new Map(); // access token → { sub, email, exp }
+const refreshTokens = new Map(); // refresh token → email
+
+function dq(s) {
+  const tag = `q${randomBytes(6).toString('hex')}`;
+  return `$${tag}$${s}$${tag}$`;
+}
+
+function literal(value, type) {
+  if (value === null || value === undefined) return `null::${type}`;
+  if (type === 'jsonb') return `${dq(JSON.stringify(value))}::jsonb`;
+  if (type === 'text') return `${dq(String(value))}::text`;
+  if (type === 'text[]') {
+    if (!Array.isArray(value)) throw new Error('expected an array');
+    return `array[${value.map((v) => dq(String(v))).join(',')}]::text[]`;
+  }
+  if (type === 'bigint' || type === 'integer') {
+    if (!Number.isSafeInteger(value)) throw new Error('expected an integer');
+    return `${value}::${type}`;
+  }
+  if (type === 'boolean') return value ? 'true' : 'false';
+  throw new Error(`unknown type ${type}`);
+}
+
+/** Run SQL as a Supabase role; returns stdout. Rejects with { code, message } on SQL errors. */
+function runSql(sql, who) {
+  const claims = who ? JSON.stringify({ sub: who.sub, role: 'authenticated', email: who.email }) : '';
+  const script = [
+    '\\set VERBOSITY verbose',
+    'begin;',
+    `set local role ${who ? 'authenticated' : 'anon'};`,
+    `select set_config('request.jwt.claims', ${dq(claims)}, true) \\g ${process.platform === 'win32' ? 'NUL' : '/dev/null'}`,
+    sql,
+    'commit;',
+  ].join('\n');
+  return new Promise((resolve, reject) => {
+    const p = spawn(PSQL, ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-d', DB], { env: process.env });
+    let out = '';
+    let err = '';
+    p.stdout.on('data', (d) => (out += d));
+    p.stderr.on('data', (d) => (err += d));
+    p.on('close', (code) => {
+      if (code === 0) return resolve(out.trim());
+      const m = /ERROR:\s+([0-9A-Z]{5}):\s+(.*)/.exec(err);
+      reject({ code: m?.[1] ?? 'XX000', message: m?.[2]?.trim() ?? err.trim() });
+    });
+    p.stdin.end(script);
+  });
+}
+
+function send(res, status, body) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'apikey, authorization, content-type, prefer, x-client-info',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+  });
+  res.end(body === undefined ? '' : JSON.stringify(body));
+}
+
+function sqlError(res, e) {
+  const status = e.code === 'P0001' ? 400 : e.code === '42501' ? 403 : e.code === '42883' ? 404 : 400;
+  send(res, status, { code: e.code === '42883' ? 'PGRST202' : e.code, message: e.message });
+}
+
+function issue(email) {
+  const at = `at-${randomUUID()}`;
+  const rt = `rt-${randomUUID()}`;
+  const expiresIn = Number(process.env.FAKE_TOKEN_TTL ?? 3600);
+  tokens.set(at, { sub: USER_IDS[email], email, exp: Date.now() + expiresIn * 1000 });
+  refreshTokens.set(rt, email);
+  return { access_token: at, refresh_token: rt, token_type: 'bearer', expires_in: expiresIn, user: { id: USER_IDS[email], email } };
+}
+
+async function readBody(req) {
+  let s = '';
+  for await (const chunk of req) s += chunk;
+  return s ? JSON.parse(s) : undefined;
+}
+
+const server = createServer(async (req, res) => {
+  try {
+    if (req.method === 'OPTIONS') return send(res, 204);
+    const url = new URL(req.url, `http://localhost:${PORT}`);
+    if (req.headers.apikey !== ANON_KEY) return send(res, 401, { message: 'Invalid API key' });
+    const body = await readBody(req);
+
+    // ----- Test only: start again from an empty shared database -----
+    if (url.pathname === '/__test/reset' && req.method === 'POST') {
+      tokens.clear();
+      refreshTokens.clear();
+      await resetDatabase();
+      return send(res, 200, { ok: true });
+    }
+
+    // ----- Auth -----
+    if (url.pathname === '/auth/v1/token') {
+      const grant = url.searchParams.get('grant_type');
+      if (grant === 'password') {
+        const email = String(body?.email ?? '').toLowerCase();
+        if (PASSWORDS[email] && PASSWORDS[email] === body?.password) return send(res, 200, issue(email));
+        return send(res, 400, { code: 400, error_code: 'invalid_credentials', msg: 'Invalid login credentials' });
+      }
+      if (grant === 'refresh_token') {
+        const email = refreshTokens.get(body?.refresh_token);
+        if (!email) return send(res, 400, { code: 400, error_code: 'refresh_token_not_found', msg: 'Invalid Refresh Token' });
+        refreshTokens.delete(body.refresh_token); // rotated, like Supabase
+        return send(res, 200, issue(email));
+      }
+    }
+    if (url.pathname === '/auth/v1/logout') return send(res, 204);
+
+    // Who is calling: the anon key, or a signed-in access token.
+    const bearer = String(req.headers.authorization ?? '').replace(/^Bearer /, '');
+    let who = null;
+    if (bearer !== ANON_KEY) {
+      const t = tokens.get(bearer);
+      if (!t || t.exp < Date.now()) return send(res, 401, { code: 'PGRST301', message: 'JWT expired' });
+      who = t;
+    }
+
+    // ----- SQL functions -----
+    const rpc = /^\/rest\/v1\/rpc\/([a-z_]+)$/.exec(url.pathname);
+    if (rpc && req.method === 'POST') {
+      const fn = rpc[1];
+      const types = FUNCS[fn];
+      if (!types) return send(res, 404, { code: 'PGRST202', message: `Could not find the function public.${fn}` });
+      const args = Object.entries(body ?? {}).map(([k, v]) => {
+        if (!(k in types)) throw { code: 'PGRST202', message: `unknown argument ${k}` };
+        return `${k} => ${literal(v, types[k])}`;
+      });
+      const call = `public.${fn}(${args.join(', ')})`;
+      try {
+        if (VOID_FUNCS.has(fn)) {
+          await runSql(`select ${call} \\g ${process.platform === 'win32' ? 'NUL' : '/dev/null'}`, who);
+          return send(res, 200, null);
+        }
+        const out = await runSql(`select coalesce(to_jsonb(${call}), 'null'::jsonb);`, who);
+        return send(res, 200, JSON.parse(out || 'null'));
+      } catch (e) {
+        return sqlError(res, e);
+      }
+    }
+
+    // ----- Tables: insert (POST) and update (PATCH ?id=eq.N) -----
+    const table = /^\/rest\/v1\/([a-z_]+)$/.exec(url.pathname)?.[1];
+    if (table && TABLES[table]) {
+      const allowed = TABLES[table];
+      try {
+        if (req.method === 'POST') {
+          const rows = Array.isArray(body) ? body : [body];
+          const cols = [...new Set(rows.flatMap((r) => Object.keys(r)))];
+          if (cols.some((c) => !allowed.includes(c) && c !== 'text')) throw { code: '42501', message: 'permission denied' };
+          const values = rows.map((r) => `(${cols.map((c) => literal(r[c], typeof r[c] === 'boolean' ? 'boolean' : typeof r[c] === 'number' ? 'integer' : 'text')).join(', ')})`);
+          const out = await runSql(`with t as (insert into public.${table} (${cols.join(', ')}) values ${values.join(', ')} returning *) select coalesce(json_agg(to_jsonb(t)), '[]') from t;`, who);
+          return send(res, 201, JSON.parse(out));
+        }
+        if (req.method === 'PATCH') {
+          const id = /^eq\.(\d+)$/.exec(url.searchParams.get('id') ?? '')?.[1];
+          if (!id) return send(res, 400, { message: 'id filter required' });
+          const sets = Object.entries(body).map(([c, v]) => {
+            if (!allowed.includes(c)) throw { code: '42501', message: 'permission denied' };
+            return `${c} = ${literal(v, typeof v === 'boolean' ? 'boolean' : typeof v === 'number' ? 'integer' : 'text')}`;
+          });
+          const out = await runSql(`with t as (update public.${table} set ${sets.join(', ')} where id = ${Number(id)} returning *) select coalesce(json_agg(to_jsonb(t)), '[]') from t;`, who);
+          return send(res, 200, JSON.parse(out));
+        }
+      } catch (e) {
+        return sqlError(res, e);
+      }
+    }
+    send(res, 404, { message: 'not found' });
+  } catch (e) {
+    send(res, 400, { code: e.code ?? 'XX000', message: e.message ?? String(e) });
+  }
+});
+
+/** Fresh database: Supabase stand-in (roles, auth.users) + the real schema + staff with User IDs. */
+async function resetDatabase() {
+  const admin = (sql, db = 'postgres') =>
+    new Promise((resolve, reject) => {
+      const p = spawn(PSQL, ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-d', db], { env: process.env });
+      let err = '';
+      p.stderr.on('data', (d) => (err += d));
+      p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err))));
+      p.stdin.end(sql);
+    });
+  await admin(`drop database if exists ${DB} with (force);`);
+  await admin(`create database ${DB};`);
+  await admin(readFileSync('supabase/tests/stub.sql', 'utf8'), DB);
+  await admin(readFileSync('supabase/schema.sql', 'utf8'), DB);
+  await admin("select public.allow_staff('owner@tikka.test', 'owner'); select public.allow_staff('counter1@tikka.test', 'counter1');", DB);
+}
+
+await resetDatabase();
+server.listen(PORT, () => console.log(`fake Supabase on http://localhost:${PORT} (database ${DB})`));

@@ -45,6 +45,8 @@ export function buildReceipt(bill: Bill, s: Settings, width: ReceiptWidth): HTML
       'div',
       { class: 'r-meta' },
       row('Receipt No', bill.billNo),
+      bill.printedAs ? row('Printed as', bill.printedAs) : null,
+      bill.sync && bill.status === 'paid' ? h('div', { class: 'r-offline', text: 'Made offline: final receipt number is given when this phone is back online.' }) : null,
       row('Date', formatDateTime(bill.createdAt)),
       row('Order', orderLine(bill)),
       bill.customerName ? row('Customer', bill.customerName) : null,

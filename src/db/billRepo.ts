@@ -6,8 +6,11 @@ import { draw, type BagState } from '../core/shuffleBag';
 import { applyBill, emptyStats } from '../core/stats';
 import { isQty, cleanText, LIMITS } from '../core/validate';
 import { MAX_BP } from '../core/money';
+import { cloudHooks } from './hooks';
 
-export class BillError extends Error {}
+export class BillError extends Error {
+  override name = 'BillError';
+}
 
 export interface BillDraft {
   items: { menuId: number; qty: number }[];
@@ -18,9 +21,9 @@ export interface BillDraft {
   discount: Discount;
 }
 
-const FALLBACK_LINE = 'Thank you! Visit again 😊';
+export const FALLBACK_LINE = 'Thank you! Visit again 😊';
 
-function validateDraft(d: BillDraft): BillDraft {
+export function validateDraft(d: BillDraft): BillDraft {
   if (!Array.isArray(d.items) || d.items.length === 0) throw new BillError('Add at least one item');
   // Merge duplicate lines for the same dish.
   const merged = new Map<number, number>();
@@ -54,6 +57,8 @@ function validateDraft(d: BillDraft): BillDraft {
  */
 export async function saveBill(input: BillDraft, now: number = Date.now()): Promise<Bill> {
   const draft = validateDraft(input);
+  const cloud = cloudHooks();
+  if (cloud) return cloud.saveBill(draft, now); // shared database: numbered by the server
   const db = await getDB();
   const tx = db.transaction(['menu', 'bills', 'counters', 'monthlyStats', 'settings', 'cheesyLines', 'meta'], 'readwrite');
   const done = tx.done;
@@ -143,6 +148,8 @@ export async function voidBill(billNo: string, reason: string, now: number = Dat
   const why = cleanText(reason, true);
   if (why.length < 3) throw new BillError('Please give a reason (at least 3 characters)');
   if (why.length > LIMITS.voidReason) throw new BillError(`Reason must be at most ${LIMITS.voidReason} characters`);
+  const cloud = cloudHooks();
+  if (cloud) return cloud.voidBill(billNo, why);
   const db = await getDB();
   const tx = db.transaction(['bills', 'monthlyStats'], 'readwrite');
   const done = tx.done;

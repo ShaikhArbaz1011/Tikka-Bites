@@ -1,0 +1,44 @@
+/* Sign-in, fingerprint and setup screens (loaded only when the shared database is on). */
+.auth-screen {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; overflow: auto;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: var(--brand-black);
+}
+.auth-card {
+  width: min(400px, 100%); display: grid; gap: 14px; justify-items: stretch; text-align: center;
+  padding: 28px 24px; border-radius: var(--radius); background: var(--surface); color: var(--text);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 0.5); border-top: 4px solid #e00008;
+}
+.auth-logo { width: 120px; height: 120px; border-radius: 50%; justify-self: center; }
+.auth-title { font-size: 22px; }
+.auth-sub { margin-top: -6px; }
+.auth-form { display: grid; gap: 14px; text-align: left; }
+.pass-row { display: flex; gap: 8px; align-items: center; }
+.pass-row .input { flex: 1; min-width: 0; }
+.auth-submit { min-height: 52px; font-size: 16px; }
+.auth-spinner {
+  justify-self: center; width: 36px; height: 36px; border-radius: 50%;
+  border: 4px solid var(--border); border-top-color: var(--accent); animation: auth-spin 0.9s linear infinite;
+}
+@keyframes auth-spin { to { transform: rotate(360deg); } }
+
+/* Sync status pill (nav + phone top bar) */
+.sync-pill {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent; color: var(--text-2); font-size: 12px; font-weight: 700;
+  text-decoration: none; white-space: nowrap;
+}
+.sync-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--text-2); flex: none; }
+.sync-pill[data-status='synced']::before { background: #22c55e; }
+.sync-pill[data-status='syncing']::before { background: #eab308; }
+.sync-pill[data-status='offline']::before, .sync-pill[data-status='error']::before,
+.sync-pill[data-status='signed-out']::before, .sync-pill[data-status='not-staff']::before,
+.sync-pill[data-status='needs-setup']::before { background: #ef4444; }
+.topbar .sync-pill { color: #fff; border-color: #3a3a3a; }
+.nav-foot { flex-direction: column; gap: 8px; align-items: stretch; }
+@media (min-width: 640px) and (max-width: 1023px) { .nav .sync-pill { padding: 0; width: 32px; justify-content: center; align-self: center; } .nav .sync-pill .sync-text { display: none; } }
+
+/* Account & sync (Settings) */
+.attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.attention-row { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-left: 4px solid #b91c1c; border-radius: var(--radius-sm); }
+.attention-row .btn-row { justify-content: flex-start; }

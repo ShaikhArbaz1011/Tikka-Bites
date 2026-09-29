@@ -47,8 +47,8 @@ export async function importBackup(b: Backup): Promise<void> {
   const stats = new Map<string, MonthlyStats>();
   const counters = new Map<string, number>();
   for (const bill of b.bills) {
-    const seq = parseBillNo(bill.billNo)!.seq;
-    counters.set(bill.monthKey, Math.max(counters.get(bill.monthKey) ?? 0, seq));
+    const seq = parseBillNo(bill.billNo)?.seq; // offline OFF- numbers don't use the monthly counter
+    if (seq) counters.set(bill.monthKey, Math.max(counters.get(bill.monthKey) ?? 0, seq));
     let s = stats.get(bill.monthKey);
     if (!s) stats.set(bill.monthKey, (s = { monthKey: bill.monthKey, ...emptyStats() }));
     if (bill.status === 'paid') applyBill(s, bill, 1);

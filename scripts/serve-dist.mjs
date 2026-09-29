@@ -1,6 +1,6 @@
 // Serve dist/ with the SAME headers and SPA fallback as vercel.json, so local
 // tests exercise the real Content-Security-Policy.
-// Usage: node scripts/serve-dist.mjs [port] [--pages /repo/]
+// Usage: node scripts/serve-dist.mjs [port] [--pages /repo/] [--root dist-folder]
 //   --pages /repo/  imitate GitHub Pages: serve under a sub-folder, send no custom headers.
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
@@ -9,7 +9,8 @@ import { join, extname, normalize } from 'node:path';
 const port = Number(process.argv[2] ?? 4173);
 const pagesAt = process.argv.indexOf('--pages');
 const prefix = pagesAt > 0 ? process.argv[pagesAt + 1] ?? '/app/' : '/';
-const root = 'dist';
+const rootAt = process.argv.indexOf('--root');
+const root = rootAt > 0 ? process.argv[rootAt + 1] : 'dist';
 const vercel = JSON.parse(readFileSync('vercel.json', 'utf8'));
 const TYPES = {
   '.webp': 'image/webp',

@@ -235,5 +235,11 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
   };
 
   refresh();
-  return () => cleanups.forEach((c) => c());
+  // Shared database: bills from other phones arrived — redraw.
+  const onCloudData = () => refresh();
+  document.addEventListener('cloud-data-changed', onCloudData);
+  return () => {
+    document.removeEventListener('cloud-data-changed', onCloudData);
+    cleanups.forEach((c) => c());
+  };
 }

@@ -4,7 +4,7 @@
  * bill arithmetic is re-verified, so a tampered or corrupt file can't get in.
  */
 import { MAX_PRICE_PAISE, MAX_BP } from './money';
-import { BILL_NO_RE } from './billNo';
+import { BILL_NO_RE, OFFLINE_NO_RE } from './billNo';
 import { discountAmount, type Discount } from './totals';
 import { LIMITS } from './validate';
 import type { Bill, BillItem, CheesyLine, Dish, Settings } from '../db/types';
@@ -149,11 +149,22 @@ const BILL_REQUIRED = [
 ];
 
 function checkBill(v: unknown, p: string): string {
-  const o = obj(v, p, BILL_REQUIRED, ['tableNo', 'customerName', 'voidReason', 'voidedAt']);
+  const o = obj(v, p, BILL_REQUIRED, ['tableNo', 'customerName', 'voidReason', 'voidedAt', 'printedAs', 'sync']);
   const billNo = str(o['billNo'], `${p}.billNo`, 1, 30);
   const m = BILL_NO_RE.exec(billNo);
-  if (!m) fail(`${p}.billNo`, 'is not in RCPT-YYYYMM-0001 format');
-  if (o['monthKey'] !== `${m[1]}${m[2]}`) fail(`${p}.monthKey`, 'does not match bill number');
+  if (m) {
+    if (o['monthKey'] !== `${m[1]}${m[2]}`) fail(`${p}.monthKey`, 'does not match bill number');
+  } else if (OFFLINE_NO_RE.test(billNo)) {
+    // Made offline (shared database), not uploaded yet: the number is temporary.
+    if (typeof o['monthKey'] !== 'string' || !/^\d{6}$/.test(o['monthKey'])) fail(`${p}.monthKey`, 'must be YYYYMM');
+    if (!('sync' in o)) fail(`${p}.sync`, 'an offline bill must say it is waiting to upload');
+  } else fail(`${p}.billNo`, 'is not in RCPT-YYYYMM-0001 format');
+  if ('printedAs' in o && !OFFLINE_NO_RE.test(str(o['printedAs'], `${p}.printedAs`, 1, 30))) fail(`${p}.printedAs`, 'is not an OFF- number');
+  if ('sync' in o) {
+    const sy = obj(o['sync'], `${p}.sync`, ['clientRef'], ['error']);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(str(sy['clientRef'], `${p}.sync.clientRef`, 36, 36))) fail(`${p}.sync.clientRef`, 'is not a valid reference');
+    if ('error' in sy) str(sy['error'], `${p}.sync.error`, 1, 300);
+  }
   int(o['createdAt'], `${p}.createdAt`, 0, MAX_TIME);
   int(o['hour'], `${p}.hour`, 0, 23);
   int(o['weekday'], `${p}.weekday`, 0, 6);

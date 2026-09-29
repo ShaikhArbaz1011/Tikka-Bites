@@ -94,3 +94,18 @@ export function formatMonthKey(monthKey: string): string {
 }
 
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/**
+ * 3-month limit: the oldest month still kept is 2 months before the current one
+ * (local time). On 1 Jan 2027 that is "202611": November, December and January stay.
+ */
+export function keepFromMonth(now: number = Date.now()): string {
+  const d = new Date(now);
+  const k = new Date(d.getFullYear(), d.getMonth() - 2, 1);
+  return `${k.getFullYear()}${String(k.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** The month that will be deleted when the next month starts (the oldest kept month). */
+export function nextMonthToDelete(now: number = Date.now()): string {
+  return keepFromMonth(now);
+}

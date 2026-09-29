@@ -14,6 +14,7 @@ import type { ReceiptWidth } from '../../db/types';
 import { BUILT_IN_LOGO } from '../../db/db';
 import { assetUrl } from '../../assets';
 import { getThemePref, setThemePref, type ThemePref } from '../../theme';
+import { cloudEnabled } from '../../cloud/config';
 
 function section(title: string, desc: string, ...children: Node[]): HTMLElement {
   return h('section', { class: 'card settings-card' }, h('h2', { class: 'section-title', text: title }), h('p', { class: 'muted section-desc', text: desc }), ...children);
@@ -139,11 +140,15 @@ export async function mount(root: HTMLElement): Promise<() => void> {
       : 'Storage is not yet protected. Install the app or keep using it and the browser may grant protection. Regular backups are still recommended.';
   })();
 
+  // Shared database only: sign-out, sync status, fingerprint (lazy-loaded).
+  const account = cloudEnabled() ? await (await import('../../cloud/accountSection')).accountSection() : null;
+
   root.append(
     h('header', { class: 'page-head' }, h('h1', { class: 'page-title', text: 'Settings' })),
     h(
       'div',
       { class: 'settings' },
+      account ? section('Account & sync', 'Everyone signs in, and all phones share one menu and one list of bills.', account.body) : h('span', { attrs: { hidden: true } }),
       section('Restaurant details', 'Printed at the top of every receipt.', detailsForm),
       section('Receipt logo', 'The round Tikka Bites logo prints at the top of every receipt. You can upload a different PNG, JPG or WEBP (up to 2 MB); it is resized to 300px and stored on this device.',
         h('div', { class: 'logo-row' }, logoBox, h('div', { class: 'btn-row' }, fileInput, uploadLabel, removeBtn)),
@@ -159,5 +164,8 @@ export async function mount(root: HTMLElement): Promise<() => void> {
       ),
     ),
   );
-  return () => document.removeEventListener('themechange', onTheme);
+  return () => {
+    document.removeEventListener('themechange', onTheme);
+    account?.cleanup();
+  };
 }

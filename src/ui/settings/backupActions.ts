@@ -4,6 +4,8 @@ import { formatDateISO, formatDateTime } from '../../core/dates';
 import { downloadBlob } from '../download';
 import { confirmDialog } from '../components/modal';
 import { toast } from '../components/toast';
+import { cloudEnabled } from '../../cloud/config';
+import { purgeOldMonths } from '../../db/retention';
 
 /** Download a full JSON backup and record the time. */
 export async function runBackup(): Promise<void> {
@@ -17,6 +19,11 @@ export async function runBackup(): Promise<void> {
 
 /** Validate a backup file, confirm with the user, then replace all data. */
 export async function runRestore(file: File): Promise<boolean> {
+  if (cloudEnabled()) {
+    // The shared database is the master copy for every phone; restoring one phone would put it out of step.
+    toast('Restore is turned off while the shared database is on: every phone already gets the shared data.', 'error', 7000);
+    return false;
+  }
   if (file.size > MAX_BACKUP_BYTES) {
     toast('Backup file is too large (max 50 MB)', 'error');
     return false;
@@ -42,6 +49,7 @@ export async function runRestore(file: File): Promise<boolean> {
   });
   if (!ok) return false;
   await importBackup(b);
+  await purgeOldMonths(); // only the last 3 months are kept
   toast('Backup restored', 'success');
   return true;
 }

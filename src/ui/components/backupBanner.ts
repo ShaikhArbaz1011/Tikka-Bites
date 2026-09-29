@@ -49,5 +49,5 @@ export async function showBackupReminder(slot: HTMLElement, now = Date.now()): P
     await runBackup();
   });
   document.addEventListener('backup-done', hide, { once: true });
-  slot.replaceChildren(banner);
+  slot.append(banner);
 }

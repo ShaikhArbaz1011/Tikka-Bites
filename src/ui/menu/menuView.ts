@@ -6,7 +6,7 @@ import { confirmDialog } from '../components/modal';
 import { toast } from '../components/toast';
 import { openDishForm } from './dishForm';
 import { getMenu, refreshMenu, onMenuChange, searchDishes, type IndexedDish } from '../../state/menuStore';
-import { setDishActive, deleteDish, addDishes } from '../../db/menuRepo';
+import { setDishActive, deleteDish, addDishes, MenuError } from '../../db/menuRepo';
 import { TIKKA_BITES_MENU } from '../../data/sampleMenu';
 import { formatINR } from '../../core/money';
 import { debounce } from '../../core/debounce';
@@ -77,9 +77,14 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
         const sample = h('button', { class: 'btn btn-primary', text: `Load Tikka Bites menu (${TIKKA_BITES_MENU.length} dishes)`, attrs: { type: 'button' } });
         sample.addEventListener('click', async () => {
           sample.disabled = true;
-          await addDishes(TIKKA_BITES_MENU);
-          await refreshMenu();
-          toast('Tikka Bites menu added', 'success');
+          try {
+            await addDishes(TIKKA_BITES_MENU);
+            await refreshMenu();
+            toast('Tikka Bites menu added', 'success');
+          } catch (err) {
+            sample.disabled = false;
+            toast(err instanceof MenuError ? err.message : 'Could not load the menu', 'error', 5000);
+          }
         });
         const add = h('button', { class: 'btn', text: 'Add your first dish', attrs: { type: 'button' } });
         add.addEventListener('click', () => openDishForm(undefined, []));
@@ -110,8 +115,12 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     const action = btn.dataset['action'];
     if (action === 'edit') openDishForm(dish, categories());
     else if (action === 'toggle') {
-      await setDishActive(dish.id, !dish.active);
-      await refreshMenu();
+      try {
+        await setDishActive(dish.id, !dish.active);
+        await refreshMenu();
+      } catch (err) {
+        toast(err instanceof MenuError ? err.message : 'Could not change the dish', 'error', 5000);
+      }
     } else if (action === 'delete') {
       const ok = await confirmDialog({
         title: `Delete ${dish.name}?`,
@@ -122,9 +131,13 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
         danger: true,
       });
       if (!ok) return;
-      const kind = await deleteDish(dish.id);
-      await refreshMenu();
-      toast(kind === 'soft' ? `${dish.name} hidden (kept in old bills)` : `${dish.name} deleted`, 'success');
+      try {
+        const kind = await deleteDish(dish.id);
+        await refreshMenu();
+        toast(kind === 'soft' ? `${dish.name} hidden (kept in old bills)` : `${dish.name} deleted`, 'success');
+      } catch (err) {
+        toast(err instanceof MenuError ? err.message : 'Could not delete the dish', 'error', 5000);
+      }
     }
   });
 

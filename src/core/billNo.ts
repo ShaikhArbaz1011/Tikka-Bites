@@ -11,6 +11,9 @@ export const LEGACY_BILL_PREFIX = 'INV';
 
 export const BILL_NO_RE = /^(?:RCPT|INV)-(\d{4})(0[1-9]|1[0-2])-(\d{4,})$/;
 
+/** Temporary number of a bill made offline with the shared database on (OFF-<phone code>-0001). */
+export const OFFLINE_NO_RE = /^OFF-[A-Z0-9]{3,6}-\d{4,}$/;
+
 export function monthKeyOf(d: Date | number): string {
   const date = typeof d === 'number' ? new Date(d) : d;
   return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`;

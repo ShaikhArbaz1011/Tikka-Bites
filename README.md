@@ -18,6 +18,12 @@ there's **no login, no server, no monthly fee**, and **your data never leaves th
   - Filters: date presets, month picker, custom range, category, payment, order type, veg/non-veg, amount range, bill number.
   - **Export to Excel** (`.xlsx`) for any filtered period. You get one workbook with Summary, Bills, Items and Dish Sales sheets. Dates and times are real Excel dates, and amounts are in ₹.
   - Void a bill with a reason; it's kept on record but left out of totals.
+- **Shared database (optional, free):**
+  - Every phone uses one menu and one list of bills.
+  - Staff sign in with a **User ID and password** and can **unlock with a fingerprint**.
+  - Billing keeps working offline and syncs later.
+  - Only **3 months** are kept (this month and the 2 before); on the 1st the oldest month is deleted, after an Excel reminder.
+  - Setup guide: [`supabase/README.md`](supabase/README.md).
 - **Data safety:** one-click JSON backup, and a restore that strictly checks the file. You get a reminder if your last backup is over 7 days old.
 - **Works offline** and installs like an app on phones, tablets and PCs (it's a PWA).
 - **No tax / GST lines.** It's built for a local business: total = subtotal − discount, rounded to the nearest rupee (you can turn rounding off).

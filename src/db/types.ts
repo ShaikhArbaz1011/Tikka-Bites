@@ -58,6 +58,10 @@ export interface Bill {
   hasVeg: boolean;
   hasNonVeg: boolean;
   cheesyLine: string;
+  /** Shared database: the temporary number printed while this bill was made offline (e.g. OFF-K7Q-0003). */
+  printedAs?: string;
+  /** Shared database, this phone only: the bill is waiting to be uploaded (its number is temporary). */
+  sync?: { clientRef: string; error?: string };
   status: 'paid' | 'void';
   voidReason?: string;
   voidedAt?: number;
@@ -121,4 +125,32 @@ export interface MetaMap {
   shuffleBag: BagState;
   cartDraft: unknown;
   sampleMenuOffered: boolean;
+  // ---- Shared database (Supabase) ----
+  /** Signed-in account on this phone. */
+  session: CloudSession;
+  /** Last change number received from the shared database. */
+  cloudRev: number;
+  /** Which shared database this phone's copy belongs to (changes if it was re-created). */
+  cloudDbId: string;
+  /** Short random code for this phone, used in temporary offline numbers (OFF-K7Q-0001). */
+  deviceTag: string;
+  /** Last temporary offline number used on this phone. */
+  offSeq: number;
+  /** Bills made offline, oldest first, waiting to be uploaded. */
+  outbox: string[];
+  /** When this phone last finished syncing (epoch ms). */
+  lastSyncAt: number;
+  /** Fingerprint unlock on this phone (WebAuthn platform credential). */
+  biometric: { credentialId: string; username: string };
+}
+
+export interface CloudSession {
+  accessToken: string;
+  refreshToken: string;
+  /** Epoch ms when the access token expires. */
+  expiresAt: number;
+  userId: string;
+  email: string;
+  /** User ID typed at sign-in (or the email if they signed in with it). */
+  username: string;
 }

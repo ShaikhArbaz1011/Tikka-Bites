@@ -37,6 +37,9 @@ export function billList(onChanged: () => void): { el: HTMLElement; load(f: Repo
         h('span', { class: 'muted bill-when', text: formatDateTime(b.createdAt) })),
       h('span', { class: 'bill-meta muted', text: `${ORDER_LABEL[b.orderType]}${b.tableNo ? ` · T${b.tableNo}` : ''} · ${PAYMENT_LABEL[b.paymentMode]} · ${b.itemCount} item${b.itemCount === 1 ? '' : 's'}` }),
       b.status === 'void' ? h('span', { class: 'badge badge-void', text: 'VOID', attrs: { title: b.voidReason ?? '' } }) : null,
+      b.sync && b.status === 'paid'
+        ? h('span', { class: `badge ${b.sync.error ? 'badge-void' : 'badge-wait'}`, text: b.sync.error ? 'NOT UPLOADED' : 'WAITING', attrs: { title: b.sync.error ?? 'Made offline: uploads when the internet is back' } })
+        : null,
       h('span', { class: 'bill-total', text: formatINR(b.totalPaise, sym) }),
       h('div', { class: 'bill-actions' },
         h('button', { class: 'btn btn-sm', attrs: { type: 'button', 'data-action': 'view', 'aria-label': `View or reprint ${b.billNo}` } }, icon('print', 16), 'View'),

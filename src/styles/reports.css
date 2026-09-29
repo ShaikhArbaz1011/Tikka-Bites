@@ -120,6 +120,7 @@
 .bill-actions { grid-area: actions; display: flex; gap: 6px; justify-content: flex-end; }
 .bill-row.is-void .bill-total { text-decoration: line-through; color: var(--text-2); }
 .badge { justify-self: start; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+.badge-wait { background: #a16207; color: #fff; } /* 5.1:1 */
 .badge-void { background: #b91c1c; color: #fff; }
 @media (max-width: 899px) { .bill-row .badge { grid-area: auto; grid-row: 1; grid-column: 1; justify-self: end; margin-right: 8px; } }
 .list-status { padding: 12px 0; }

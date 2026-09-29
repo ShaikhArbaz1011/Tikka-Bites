@@ -1,5 +1,6 @@
 import { getDB, SETTINGS_KEY, DEFAULT_SETTINGS } from './db';
 import type { MetaMap, Settings } from './types';
+import { cloudHooks } from './hooks';
 
 export async function getSettings(): Promise<Settings> {
   const s = await (await getDB()).get('settings', SETTINGS_KEY);
@@ -7,6 +8,8 @@ export async function getSettings(): Promise<Settings> {
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<Settings> {
+  const cloud = cloudHooks();
+  if (cloud) return cloud.saveSettings(patch); // shared by every phone
   const db = await getDB();
   const tx = db.transaction('settings', 'readwrite');
   const current = { ...DEFAULT_SETTINGS, ...(await tx.store.get(SETTINGS_KEY)) };

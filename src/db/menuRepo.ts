@@ -2,6 +2,7 @@ import { getDB } from './db';
 import type { Dish } from './types';
 import { cleanText, LIMITS } from '../core/validate';
 import { MAX_PRICE_PAISE } from '../core/money';
+import { cloudHooks } from './hooks';
 
 export interface DishInput {
   name: string;
@@ -11,10 +12,12 @@ export interface DishInput {
   active: boolean;
 }
 
-export class MenuError extends Error {}
+export class MenuError extends Error {
+  override name = 'MenuError';
+}
 
 
-function checkInput(d: DishInput): DishInput {
+export function checkInput(d: DishInput): DishInput {
   const name = cleanText(d.name);
   const category = cleanText(d.category);
   if (!name || name.length > LIMITS.dishName) throw new MenuError(`Name must be 1–${LIMITS.dishName} characters`);
@@ -42,6 +45,8 @@ export async function getDish(id: number): Promise<Dish | undefined> {
 
 export async function addDish(input: DishInput, now = Date.now()): Promise<Dish> {
   const d = checkInput(input);
+  const cloud = cloudHooks();
+  if (cloud) return cloud.addDish(d);
   const db = await getDB();
   const record = { ...d, nameLower: d.name.toLowerCase(), deleted: false, usedInBills: false, createdAt: now, updatedAt: now };
   const id = await db.add('menu', record as Dish);
@@ -50,6 +55,8 @@ export async function addDish(input: DishInput, now = Date.now()): Promise<Dish>
 
 export async function updateDish(id: number, input: DishInput, now = Date.now()): Promise<Dish> {
   const d = checkInput(input);
+  const cloud = cloudHooks();
+  if (cloud) return cloud.updateDish(id, d);
   const db = await getDB();
   const tx = db.transaction('menu', 'readwrite');
   const existing = await tx.store.get(id);
@@ -61,6 +68,8 @@ export async function updateDish(id: number, input: DishInput, now = Date.now())
 }
 
 export async function setDishActive(id: number, active: boolean): Promise<void> {
+  const cloud = cloudHooks();
+  if (cloud) return cloud.setDishActive(id, active);
   const db = await getDB();
   const tx = db.transaction('menu', 'readwrite');
   const d = await tx.store.get(id);
@@ -73,6 +82,8 @@ export async function setDishActive(id: number, active: boolean): Promise<void> 
  * (hidden, but kept for old bills and reports). Returns which one happened.
  */
 export async function deleteDish(id: number): Promise<'hard' | 'soft'> {
+  const cloud = cloudHooks();
+  if (cloud) return cloud.deleteDish(id); // shared database: always kept (hidden), other phones may have billed it
   const db = await getDB();
   const tx = db.transaction('menu', 'readwrite');
   const d = await tx.store.get(id);
@@ -95,6 +106,8 @@ export async function listCategories(): Promise<string[]> {
 }
 
 export async function addDishes(inputs: DishInput[]): Promise<void> {
+  const cloud = cloudHooks();
+  if (cloud) return cloud.addDishes(inputs.map(checkInput));
   const db = await getDB();
   const tx = db.transaction('menu', 'readwrite');
   const now = Date.now();
