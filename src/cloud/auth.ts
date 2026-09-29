@@ -8,6 +8,7 @@ import { request, rpc } from './http';
 import { CloudError, SIGNED_OUT_MESSAGE } from './errors';
 import { getMeta, setMeta, deleteMeta } from '../db/settingsRepo';
 import type { CloudSession } from '../db/types';
+import { USER_ID_RE } from '../core/validate';
 
 interface TokenResponse {
   access_token: string;
@@ -17,7 +18,6 @@ interface TokenResponse {
   user?: { id: string; email?: string };
 }
 
-const USER_ID_RE = /^[a-z0-9][a-z0-9._-]{1,29}$/;
 /** Refresh this long before the token runs out. */
 const REFRESH_EARLY_MS = 60_000;
 

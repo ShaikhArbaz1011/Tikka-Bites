@@ -29,6 +29,7 @@ wait $B
 q -d tb_test -f b_after_parallel.sql
 q -d tb_test -f d_sync.sql
 q -d tb_test -f e_accounts_offline_retention.sql
+q -d tb_test -f g_super_admin.sql
 q -d tb_test_import -f c_import.sql
 q -d tb_test_retention -f f_retention_dates.sql
 for db in tb_test tb_test_import tb_test_retention; do q -d postgres -c "drop database $db"; done

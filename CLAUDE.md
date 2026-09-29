@@ -17,8 +17,14 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
     - Everyone signs in with a User ID and password, and fingerprint unlock works through WebAuthn.
     - The app talks only to that one Supabase project (the CSP `connect-src` is set at build time).
     - Sync is offline-first: see `supabase/README.md` and `src/cloud/`.
+  - **Super admin** (owner request, 30 Sep 2026): `staff.role` is `super_admin` or `staff`. The Tikka Bites account (User ID `owner`) is the super admin.
+    - Only the super admin sees **Settings → Users** (`src/cloud/usersSection.ts`): add a user, change a password, remove a user.
+    - Accounts are created and deleted by the Edge Function `supabase/functions/staff-admin`, the only code that uses the secret key (Supabase injects it on the server).
+    - Its first call is always an SQL check as the caller (`staff_add_prepare` / `staff_user_id` / `staff_remove`). Keep authorization in SQL, never in the function.
+    - The function is deployed with "Verify JWT" off. It's a single file with no imports, so it can be pasted into the dashboard editor.
 - No paid services, no analytics, and no other external calls. Cloud code stays lazy-loaded (`src/cloud/boot.ts`); local-only mode must not load it.
 - Never ship or commit the Supabase `service_role` / secret key. `resolveCloudConfig` refuses it.
+- Supabase blocks any DELETE or UPDATE without a WHERE clause on app requests (safeupdate). Write `where true` for a full-table delete; `tests/unit/schema.test.ts` checks this.
 - Stack: Vite + vanilla TypeScript (strict). No React or any other UI framework.
 - All data is stored in IndexedDB through `idb`.
 - The initial JS must be **≤ 60 KB gzipped**. `npm run build` enforces this through `scripts/check-size.mjs`.

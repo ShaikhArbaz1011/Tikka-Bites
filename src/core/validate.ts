@@ -77,3 +77,20 @@ export function phone(s: string): Result<string | undefined> {
   if (!v) return ok(undefined);
   return /^\+?[\d\s-]{6,20}$/.test(v) ? ok(v) : err('Enter a valid phone number');
 }
+
+/** Shared database sign-in name; same rule as the database (staff.username). */
+export const USER_ID_RE = /^[a-z0-9][a-z0-9._-]{1,29}$/;
+
+export function userId(s: string): Result<string> {
+  const v = s.trim().toLowerCase();
+  if (!v) return err('User ID is required');
+  return USER_ID_RE.test(v) ? ok(v) : err('User ID must be 2–30 characters: small letters, numbers, dot, dash or underscore (e.g. counter2)');
+}
+
+/** A new password (same rule as supabase/functions/staff-admin). 72 bytes is the most Supabase keeps. */
+export function newPassword(s: string): Result<string> {
+  if (s.length < 8) return err('Password must be at least 8 characters');
+  if (new TextEncoder().encode(s).length > 72) return err('Password must be at most 72 characters');
+  if (s.trim() !== s) return err('Password cannot start or end with a space');
+  return ok(s);
+}

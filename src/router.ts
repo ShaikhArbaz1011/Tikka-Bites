@@ -20,6 +20,8 @@ export const ROUTES = {
 
 export type RouteName = keyof typeof ROUTES;
 export const DEFAULT_ROUTE: RouteName = 'billing';
+/** Dispatch on window to draw the current screen again (e.g. someone else signed in). */
+export const REFRESH_EVENT = 'route-refresh';
 
 export function currentRoute(): RouteName {
   const name = location.hash.replace(/^#\/?/, '').split(/[/?]/)[0] ?? '';
@@ -50,5 +52,6 @@ export function startRouter(root: HTMLElement, onChange: (r: RouteName) => void)
   };
 
   window.addEventListener('hashchange', () => void render());
+  window.addEventListener(REFRESH_EVENT, () => void render());
   void render();
 }

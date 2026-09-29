@@ -142,6 +142,8 @@ export async function mount(root: HTMLElement): Promise<() => void> {
 
   // Shared database only: sign-out, sync status, fingerprint (lazy-loaded).
   const account = cloudEnabled() ? await (await import('../../cloud/accountSection')).accountSection() : null;
+  // Super admin only: add / remove users, change passwords (hidden for everyone else).
+  const users = cloudEnabled() ? (await import('../../cloud/usersSection')).usersSection(section) : null;
 
   root.append(
     h('header', { class: 'page-head' }, h('h1', { class: 'page-title', text: 'Settings' })),
@@ -149,6 +151,7 @@ export async function mount(root: HTMLElement): Promise<() => void> {
       'div',
       { class: 'settings' },
       account ? section('Account & sync', 'Everyone signs in, and all phones share one menu and one list of bills.', account.body) : h('span', { attrs: { hidden: true } }),
+      users ?? h('span', { attrs: { hidden: true } }),
       section('Restaurant details', 'Printed at the top of every receipt.', detailsForm),
       section('Receipt logo', 'The round Tikka Bites logo prints at the top of every receipt. You can upload a different PNG, JPG or WEBP (up to 2 MB); it is resized to 300px and stored on this device.',
         h('div', { class: 'logo-row' }, logoBox, h('div', { class: 'btn-row' }, fileInput, uploadLabel, removeBtn)),

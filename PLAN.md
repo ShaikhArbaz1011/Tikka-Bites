@@ -47,7 +47,12 @@ services. All data lives in the browser (IndexedDB). Deploys free on Netlify or 
 - **Sign-in:** a User ID and password.
   - `public.login_email(user_id)` turns the User ID into the account email, then the app signs in with Supabase Auth's email/password.
   - The session is kept in IndexedDB `meta.session` and refreshed automatically.
-  - Accounts are created by the owner in the dashboard, and `allow_staff(email, user_id)` gives access.
+  - The first account is created by the owner in the dashboard, and `allow_staff(email, user_id)` gives access.
+- **Super admin** (owner request, 30 Sep 2026): `make_super_admin('owner')`. After that, users are added, changed and removed in the app under **Settings → Users**.
+  - The Edge Function `supabase/functions/staff-admin` uses the secret key only on Supabase's server.
+  - Every request is checked in SQL first, as the caller: `staff_add_prepare` → Auth admin create → `staff_add_finish`; `staff_user_id` → set password; `staff_remove` → delete the account.
+  - New accounts use the super admin's email with a `+UserID` label, so they can't collide with anyone else's email.
+  - No new runtime dependencies: the app calls it with the same plain `fetch`.
 - **Fingerprint:** WebAuthn with the phone's own sensor.
   - The phone creates a platform credential after the first password sign-in.
   - Opening the app, or returning after 5 minutes away, asks for it.
@@ -65,9 +70,11 @@ services. All data lives in the browser (IndexedDB). Deploys free on Netlify or 
   - Phones: purge with `keepFrom`.
   - A reminder banner appears in the last 7 days of each month, with an Excel download of the month about to go.
 - **Tests:**
-  - SQL: `supabase/tests`, including `e_accounts_offline_retention.sql`.
-  - Unit: `tests/unit/cloud.test.ts`.
-  - End to end: `tests/e2e-cloud/shared.spec.ts`, where two phones run against the real schema via `scripts/fake-supabase.mjs`.
+  - SQL: `supabase/tests`, including `e_accounts_offline_retention.sql` and `g_super_admin.sql`.
+  - Unit: `tests/unit/cloud.test.ts` and `tests/unit/staffAdmin.test.ts` (the Edge Function).
+  - End to end:
+    - `tests/e2e-cloud/shared.spec.ts`: two phones run against the real schema via `scripts/fake-supabase.mjs`.
+    - `tests/e2e-cloud/users.spec.ts`: the super admin manages users through the real function code.
 
 ## 1. Design source
 

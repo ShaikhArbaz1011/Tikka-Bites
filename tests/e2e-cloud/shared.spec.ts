@@ -1,28 +1,10 @@
 import { test, expect, type Page, type BrowserContext } from '@playwright/test';
-import { spawnSync } from 'node:child_process';
-import { join } from 'node:path';
+import { appReady, psql, signIn, watchErrors } from './helpers';
 
 /**
  * Shared database, end to end: two "phones" (browser contexts) use the real app
  * against scripts/fake-supabase.mjs, which runs supabase/schema.sql in PostgreSQL.
  */
-
-const psql = (sql: string) => {
-  const bin = process.env['PG_BIN'] ? join(process.env['PG_BIN'], 'psql') : 'psql';
-  const r = spawnSync(bin, ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-d', 'tb_e2e', '-c', sql], { encoding: 'utf8', env: process.env });
-  if (r.status !== 0) throw new Error(r.stderr);
-  return r.stdout.trim();
-};
-
-/** Network errors are expected here (the tests switch phones offline); anything else fails the test. */
-function watchErrors(page: Page): string[] {
-  const errors: string[] = [];
-  page.on('pageerror', (e) => errors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error' && !/Failed to load resource|net::ERR_INTERNET_DISCONNECTED/.test(m.text())) errors.push(m.text());
-  });
-  return errors;
-}
 
 async function addFingerprintSensor(ctx: BrowserContext, page: Page) {
   const cdp = await ctx.newCDPSession(page);
@@ -32,20 +14,6 @@ async function addFingerprintSensor(ctx: BrowserContext, page: Page) {
   });
 }
 
-async function signIn(page: Page, user: string, pass: string) {
-  await page.getByLabel('User ID').fill(user);
-  await page.getByLabel('Password', { exact: true }).fill(pass);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-}
-
-const appReady = async (page: Page) => {
-  try {
-    await expect(page.locator('.auth-screen')).toHaveCount(0, { timeout: 30_000 });
-  } catch {
-    throw new Error(`Still showing: ${await page.locator('.auth-screen').first().innerText().catch(() => '?')}`);
-  }
-  await expect(page.locator('.nav-link').first()).toBeVisible();
-};
 const pill = (page: Page) => page.locator('.nav .sync-pill');
 
 async function billOne(page: Page, dish: string) {

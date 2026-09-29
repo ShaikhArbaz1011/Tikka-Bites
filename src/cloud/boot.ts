@@ -22,6 +22,7 @@ import { listMenu } from '../db/menuRepo';
 import { listLines } from '../db/linesRepo';
 import { getSettings } from '../db/settingsRepo';
 import type { Bill } from '../db/types';
+import { REFRESH_EVENT } from '../router';
 
 /** Lock again when the app comes back after this long in the background. */
 const RELOCK_AFTER_MS = 5 * 60_000;
@@ -152,6 +153,12 @@ export async function startCloud(): Promise<void> {
   relockWhenAway();
   // Signed out (here, or the sign-in expired and couldn't be renewed): ask again.
   onSessionChange((s) => {
-    if (!s) void signInFlow('Please sign in again.').then(() => syncNow());
+    if (!s) {
+      void signInFlow('Please sign in again.').then(() => {
+        // The screen behind the sign-in belonged to the previous person (e.g. Settings → Users).
+        window.dispatchEvent(new Event(REFRESH_EVENT));
+        return syncNow();
+      });
+    }
   });
 }

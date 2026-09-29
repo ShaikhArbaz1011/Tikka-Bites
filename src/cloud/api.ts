@@ -45,6 +45,16 @@ export interface PullPage {
   rev: number;
 }
 
+/** One person on the staff list, as the super admin sees it (Settings → Users). */
+export interface StaffRow {
+  username: string | null;
+  role: 'super_admin' | 'staff';
+  me: boolean;
+  addedAt: number;
+}
+
+export type StaffAction = 'add' | 'reset' | 'remove';
+
 export function dishFromRow(r: MenuRow): Dish {
   return {
     id: Number(r.id),
@@ -106,4 +116,20 @@ export const api = {
     one(await authed((t) => request<LineRow[]>('/rest/v1/cheesy_lines', { body: { text, active: true }, token: t, prefer: 'return=representation' })), 'Line'),
   updateLine: async (id: number, patch: Partial<LineRow>) =>
     one(await authed((t) => request<LineRow[]>(`/rest/v1/cheesy_lines?id=eq.${Math.trunc(id)}`, { method: 'PATCH', body: patch, token: t, prefer: 'return=representation' })), 'Line'),
+
+  /** 'super_admin', 'staff', or null if not on the staff list. */
+  myRole: () => authed((t) => rpc<'super_admin' | 'staff' | null>('my_role', {}, t)),
+  listStaff: () => authed((t) => rpc<StaffRow[]>('list_staff', {}, t)),
+  /** Add a user, change a password or remove a user (super admin; supabase/functions/staff-admin). */
+  staffAdmin: async (action: StaffAction, username: string, password?: string): Promise<void> => {
+    try {
+      await authed((t) => request('/functions/v1/staff-admin', { body: { action, username, ...(password === undefined ? {} : { password }) }, token: t, timeoutMs: 20_000 }));
+    } catch (e) {
+      // 404 from Supabase itself (not a missing SQL function, which is kind 'setup' already).
+      if (e instanceof CloudError && e.status === 404 && e.kind !== 'setup') {
+        throw new CloudError('The user manager is not installed on Supabase yet (supabase/README.md, "Add users from the app").', 'setup', 404);
+      }
+      throw e;
+    }
+  },
 };

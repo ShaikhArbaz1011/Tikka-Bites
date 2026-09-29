@@ -13,6 +13,8 @@
 --    Authentication → Users, give it access here with:
 --        select public.allow_staff('counter@example.com', 'counter1');
 --    The second value is the short User ID typed on the sign-in screen.
+--    After that the super admin can add, change and remove users in the app
+--    (Settings → Users; see make_super_admin below and supabase/functions/staff-admin).
 --  * Bills can't be written directly: save_bill() / void_bill() check every
 --    bill against the menu and issue the receipt number.
 --  * Only this month and the 2 before it are kept: purge_old_months() deletes
@@ -121,6 +123,134 @@ create or replace function public.login_email(p_username text) returns text
 language sql stable security definer set search_path = public as $$
   select email from public.staff where username = lower(btrim(p_username))
 $$;
+
+-- ---------- Super admin: manages users from the app (Settings → Users) ------------------
+-- 'super_admin' may add users, change passwords and remove users; 'staff' may not.
+-- Owner only (SQL Editor), once:  select public.make_super_admin('owner');
+alter table public.staff add column if not exists role text not null default 'staff';
+alter table public.staff drop constraint if exists staff_role_valid;
+alter table public.staff add constraint staff_role_valid check (role in ('super_admin', 'staff'));
+
+create or replace function public.make_super_admin(p_who text) returns text
+language plpgsql security definer set search_path = public as $$
+declare v_who text := lower(btrim(p_who));
+begin
+  update public.staff set role = 'super_admin' where email = v_who or username = v_who;
+  if not found then
+    raise exception 'Nobody called % is on the staff list. Add them first with allow_staff().', v_who;
+  end if;
+  return v_who || ' is now the super admin: Settings → Users in the app';
+end $$;
+
+create or replace function public.my_role() returns text
+language sql stable security definer set search_path = public as $$
+  select role from public.staff where user_id = auth.uid()
+$$;
+
+create or replace function public.require_super_admin() returns void
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform public.require_staff();
+  if public.my_role() is distinct from 'super_admin' then
+    raise exception 'Only the super admin can manage users.' using errcode = 'P0001';
+  end if;
+end $$;
+
+create or replace function public.list_staff() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform public.require_super_admin();
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('username', username, 'role', role, 'me', user_id = auth.uid(),
+                                        'addedAt', floor(extract(epoch from added_at) * 1000)::bigint)
+                     order by role <> 'super_admin', username nulls last)
+      from public.staff), '[]'::jsonb);
+end $$;
+
+-- Adding a user from the app takes three steps, because only Supabase Auth can create
+-- a sign-in account and that needs the secret key (never in the app). The server
+-- function supabase/functions/staff-admin does step 2:
+--   1. staff_add_prepare(User ID) → the account email (and an old account's id, if any)
+--   2. Supabase Auth creates the account with that email and the password
+--   3. staff_add_finish(account id, User ID) → puts it on the staff list
+-- The email is the super admin's own with a +label (tikkabites+counter2@gmail.com), so
+-- it can't belong to anyone else. Staff never see it: they sign in with the User ID.
+create or replace function public.staff_add_prepare(p_username text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_user text := lower(btrim(coalesce(p_username, '')));
+  v_me text;
+  v_email text;
+  v_id uuid;
+begin
+  perform public.require_super_admin();
+  if v_user !~ '^[a-z0-9][a-z0-9._-]{1,29}$' then
+    raise exception 'User ID must be 2–30 characters: small letters, numbers, dot, dash or underscore (e.g. counter2)'
+      using errcode = 'P0001';
+  end if;
+  if exists (select 1 from public.staff where username = v_user) then
+    raise exception 'User ID % is already used', v_user using errcode = 'P0001';
+  end if;
+  select email into v_me from public.staff where user_id = auth.uid();
+  v_email := split_part(split_part(v_me, '@', 1), '+', 1) || '+' || v_user || '@' || split_part(v_me, '@', 2);
+  select id into v_id from auth.users where lower(email) = v_email;
+  if v_id is not null and exists (select 1 from public.staff where user_id = v_id) then
+    raise exception 'That account is already on the staff list' using errcode = 'P0001';
+  end if;
+  return jsonb_build_object('email', v_email, 'userId', v_id);
+end $$;
+
+create or replace function public.staff_add_finish(p_user_id uuid, p_username text) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  v_user text := lower(btrim(coalesce(p_username, '')));
+  v_expected text := public.staff_add_prepare(v_user) ->> 'email'; -- same checks again
+  v_email text;
+begin
+  select lower(email) into v_email from auth.users where id = p_user_id;
+  if v_email is distinct from v_expected then
+    raise exception 'That account does not belong to User ID %', v_user using errcode = 'P0001';
+  end if;
+  insert into public.staff (user_id, email, username, role) values (p_user_id, v_email, v_user, 'staff');
+  return v_user;
+end $$;
+
+-- Remove a user: off the staff list at once (no more access); the server function then
+-- deletes the sign-in account. Nobody can remove themselves or a super admin here.
+create or replace function public.staff_remove(p_username text) returns uuid
+language plpgsql security definer set search_path = public as $$
+declare
+  v_user text := lower(btrim(coalesce(p_username, '')));
+  v_id uuid;
+  v_role text;
+begin
+  perform public.require_super_admin();
+  select user_id, role into v_id, v_role from public.staff where username = v_user;
+  if v_id is null then raise exception 'No user called %', v_user using errcode = 'P0001'; end if;
+  if v_id = auth.uid() then raise exception 'You cannot remove yourself' using errcode = 'P0001'; end if;
+  if v_role = 'super_admin' then
+    raise exception 'A super admin can only be removed in the SQL Editor' using errcode = 'P0001';
+  end if;
+  delete from public.staff where user_id = v_id;
+  return v_id;
+end $$;
+
+-- Whose password to change: any staff member's, or the super admin's own.
+create or replace function public.staff_user_id(p_username text) returns uuid
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_user text := lower(btrim(coalesce(p_username, '')));
+  v_id uuid;
+  v_role text;
+begin
+  perform public.require_super_admin();
+  select user_id, role into v_id, v_role from public.staff where username = v_user;
+  if v_id is null then raise exception 'No user called %', v_user using errcode = 'P0001'; end if;
+  if v_role = 'super_admin' and v_id <> auth.uid() then
+    raise exception 'Only that super admin can change their own password' using errcode = 'P0001';
+  end if;
+  return v_id;
+end $$;
 
 -- ---------- Keep 3 months -----------------------------------------------------------
 -- The oldest month still kept at a given moment: that month (India time) and the 2
@@ -672,15 +802,19 @@ revoke all on function
   public.keep_from_month_at(timestamptz), public.purge_months_before(text),
   public.is_staff(), public.pull_changes(bigint, integer), public.patch_settings(jsonb, text[]),
   public.save_bill(jsonb), public.void_bill(text, text),
-  public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import()
+  public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import(),
+  public.make_super_admin(text), public.my_role(), public.require_super_admin(), public.list_staff(),
+  public.staff_add_prepare(text), public.staff_add_finish(uuid, text), public.staff_remove(text), public.staff_user_id(text)
   from public, anon, authenticated;
 grant execute on function
   public.now_ms(), -- used by column defaults, which run as the caller
   public.is_staff(), public.pull_changes(bigint, integer), public.patch_settings(jsonb, text[]),
   public.save_bill(jsonb), public.void_bill(text, text),
   public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import(),
-  public.keep_from_month(), public.keep_from_month_at(timestamptz), public.purge_old_months()
-  to authenticated; -- purge_months_before stays owner / nightly-job only
+  public.keep_from_month(), public.keep_from_month_at(timestamptz), public.purge_old_months(),
+  public.my_role(), public.list_staff(), -- the rest check for the super admin inside:
+  public.staff_add_prepare(text), public.staff_add_finish(uuid, text), public.staff_remove(text), public.staff_user_id(text)
+  to authenticated; -- purge_months_before and make_super_admin stay owner-only
 -- Needed before signing in: turns the typed User ID into the account email.
 grant execute on function public.login_email(text) to anon, authenticated;
 

@@ -42,3 +42,11 @@
 .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .attention-row { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--border); border-left: 4px solid #b91c1c; border-radius: var(--radius-sm); }
 .attention-row .btn-row { justify-content: flex-start; }
+
+/* Settings → Users (super admin) */
+.user-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.user-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.user-name { font-weight: 800; overflow-wrap: anywhere; }
+.user-role { color: var(--text-2); font-size: 13px; }
+.user-row .btn-row { margin-left: auto; }
+.users-sub { font-size: 16px; margin: 8px 0 0; }

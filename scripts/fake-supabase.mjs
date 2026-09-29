@@ -12,23 +12,32 @@ import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+// The real server function (supabase/functions/staff-admin), run here instead of on Supabase.
+import { handle as staffAdmin } from '../supabase/functions/staff-admin/index.ts';
 
 const PORT = Number(process.argv[2] ?? 54321);
 const DB = process.env.FAKE_SUPABASE_DB ?? 'tb_e2e';
 const PSQL = process.env.PG_BIN ? join(process.env.PG_BIN, 'psql') : 'psql';
 export const ANON_KEY = 'anon-key-for-local-e2e-0000000000';
+/** Stands in for the project's secret key: only the server function uses it. */
+const SECRET_KEY = 'secret-key-for-local-e2e-0000000000';
+const FUNCTION_ENV = { SUPABASE_URL: `http://localhost:${PORT}`, SUPABASE_SECRET_KEYS: JSON.stringify({ default: SECRET_KEY }) };
 
-/** Accounts (auth.users in tests/stub.sql) and their passwords. */
-const PASSWORDS = {
-  'owner@tikka.test': 'owner-pass-123',
-  'counter1@tikka.test': 'counter-pass-123',
-  'counter2@tikka.test': 'counter2-pass-123',
-};
-const USER_IDS = {
-  'owner@tikka.test': '11111111-1111-1111-1111-111111111111',
-  'counter1@tikka.test': '22222222-2222-2222-2222-222222222222',
-  'counter2@tikka.test': '33333333-3333-3333-3333-333333333333',
-};
+/** Accounts (auth.users in tests/stub.sql, plus any the super admin adds) and their passwords. */
+let PASSWORDS;
+let USER_IDS;
+function resetAccounts() {
+  PASSWORDS = {
+    'owner@tikka.test': 'owner-pass-123',
+    'counter1@tikka.test': 'counter-pass-123',
+    'counter2@tikka.test': 'counter2-pass-123',
+  };
+  USER_IDS = {
+    'owner@tikka.test': '11111111-1111-1111-1111-111111111111',
+    'counter1@tikka.test': '22222222-2222-2222-2222-222222222222',
+    'counter2@tikka.test': '33333333-3333-3333-3333-333333333333',
+  };
+}
 
 /** Argument types of every SQL function the app calls (PostgREST reads these from the database). */
 const FUNCS = {
@@ -41,6 +50,12 @@ const FUNCS = {
   import_device_data: { p_menu: 'jsonb', p_lines: 'jsonb', p_settings: 'jsonb', p_counters: 'jsonb' },
   import_bills: { p_bills: 'jsonb' },
   finish_import: {},
+  my_role: {},
+  list_staff: {},
+  staff_add_prepare: { p_username: 'text' },
+  staff_add_finish: { p_user_id: 'uuid', p_username: 'text' },
+  staff_remove: { p_username: 'text' },
+  staff_user_id: { p_username: 'text' },
 };
 const VOID_FUNCS = new Set(['import_device_data', 'finish_import']);
 const TABLES = {
@@ -60,6 +75,7 @@ function literal(value, type) {
   if (value === null || value === undefined) return `null::${type}`;
   if (type === 'jsonb') return `${dq(JSON.stringify(value))}::jsonb`;
   if (type === 'text') return `${dq(String(value))}::text`;
+  if (type === 'uuid') return `${dq(String(value))}::uuid`;
   if (type === 'text[]') {
     if (!Array.isArray(value)) throw new Error('expected an array');
     return `array[${value.map((v) => dq(String(v))).join(',')}]::text[]`;
@@ -128,12 +144,67 @@ async function readBody(req) {
   return s ? JSON.parse(s) : undefined;
 }
 
+/** Run SQL as the superuser (like Supabase's own services). */
+function adminSql(sql, db = DB) {
+  return new Promise((resolve, reject) => {
+    const p = spawn(PSQL, ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-d', db], { env: process.env });
+    let err = '';
+    p.stderr.on('data', (d) => (err += d));
+    p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err))));
+    p.stdin.end(sql);
+  });
+}
+
+/** Supabase Auth's admin API (secret key only): create, change and delete accounts. */
+async function adminUsers(req, res, id, body) {
+  if (req.headers.authorization !== `Bearer ${SECRET_KEY}`) return send(res, 401, { code: 401, error_code: 'no_authorization', msg: 'This endpoint requires a valid Bearer token' });
+  const emailOf = (uid) => Object.keys(USER_IDS).find((e) => USER_IDS[e] === uid);
+  if (req.method === 'POST' && !id) {
+    const email = String(body?.email ?? '').toLowerCase();
+    if (USER_IDS[email]) return send(res, 422, { code: 422, error_code: 'email_exists', msg: 'A user with this email address has already been registered' });
+    const uid = randomUUID();
+    await adminSql(`insert into auth.users (id, email) values ('${uid}', ${dq(email)});`);
+    USER_IDS[email] = uid;
+    PASSWORDS[email] = String(body.password);
+    return send(res, 200, { id: uid, email });
+  }
+  const email = id && emailOf(id);
+  if (!email) return send(res, 404, { code: 404, error_code: 'user_not_found', msg: 'User not found' });
+  if (req.method === 'PUT') {
+    if (body?.password) PASSWORDS[email] = String(body.password);
+    return send(res, 200, { id, email });
+  }
+  if (req.method === 'DELETE') {
+    await adminSql(`delete from auth.users where id = '${id}';`);
+    delete USER_IDS[email];
+    delete PASSWORDS[email];
+    for (const [t, v] of tokens) if (v.sub === id) tokens.delete(t);
+    for (const [t, e] of refreshTokens) if (e === email) refreshTokens.delete(t);
+    return send(res, 200, {});
+  }
+  return send(res, 405, { msg: 'method not allowed' });
+}
+
 const server = createServer(async (req, res) => {
   try {
     if (req.method === 'OPTIONS') return send(res, 204);
     const url = new URL(req.url, `http://localhost:${PORT}`);
-    if (req.headers.apikey !== ANON_KEY) return send(res, 401, { message: 'Invalid API key' });
+    const admin = /^\/auth\/v1\/admin\/users(?:\/([0-9a-f-]{36}))?$/.exec(url.pathname);
+    if (req.headers.apikey !== (admin ? SECRET_KEY : ANON_KEY)) return send(res, 401, { message: 'Invalid API key' });
     const body = await readBody(req);
+    if (admin) return await adminUsers(req, res, admin[1], body);
+
+    // ----- The staff-admin server function (the real code) -----
+    if (url.pathname === '/functions/v1/staff-admin') {
+      const fnReq = new Request(`http://localhost:${PORT}${req.url}`, {
+        method: req.method,
+        headers: { apikey: String(req.headers.apikey ?? ''), authorization: String(req.headers.authorization ?? ''), 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      const out = await staffAdmin(fnReq, { get: (n) => FUNCTION_ENV[n] });
+      res.writeHead(out.status, Object.fromEntries(out.headers));
+      return res.end(await out.text());
+    }
 
     // ----- Test only: start again from an empty shared database -----
     if (url.pathname === '/__test/reset' && req.method === 'POST') {
@@ -227,19 +298,15 @@ const server = createServer(async (req, res) => {
 
 /** Fresh database: Supabase stand-in (roles, auth.users) + the real schema + staff with User IDs. */
 async function resetDatabase() {
-  const admin = (sql, db = 'postgres') =>
-    new Promise((resolve, reject) => {
-      const p = spawn(PSQL, ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-d', db], { env: process.env });
-      let err = '';
-      p.stderr.on('data', (d) => (err += d));
-      p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err))));
-      p.stdin.end(sql);
-    });
-  await admin(`drop database if exists ${DB} with (force);`);
-  await admin(`create database ${DB};`);
-  await admin(readFileSync('supabase/tests/stub.sql', 'utf8'), DB);
-  await admin(readFileSync('supabase/schema.sql', 'utf8'), DB);
-  await admin("select public.allow_staff('owner@tikka.test', 'owner'); select public.allow_staff('counter1@tikka.test', 'counter1');", DB);
+  resetAccounts();
+  await adminSql(`drop database if exists ${DB} with (force);`, 'postgres');
+  await adminSql(`create database ${DB};`, 'postgres');
+  await adminSql(readFileSync('supabase/tests/stub.sql', 'utf8'));
+  await adminSql(readFileSync('supabase/schema.sql', 'utf8'));
+  await adminSql(
+    "select public.allow_staff('owner@tikka.test', 'owner'); select public.allow_staff('counter1@tikka.test', 'counter1');" +
+      " select public.make_super_admin('owner');",
+  );
 }
 
 await resetDatabase();

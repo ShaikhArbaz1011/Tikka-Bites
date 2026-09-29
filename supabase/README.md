@@ -51,6 +51,26 @@ For each person (you, and each counter phone or staff member):
    select public.remove_staff('counter1');
    ```
 
+### 4b. Add users from the app (super admin)
+Once this is set up, the owner can add, change and remove users in the app. This replaces
+steps 4.1–4.3 for everyone after the first account.
+1. Make the owner's account the **super admin** in the **SQL Editor**:
+   ```sql
+   select public.make_super_admin('owner');
+   ```
+2. Install the small server function that creates the sign-in accounts. It needs the project's secret key, which Supabase gives it on the server, so the key never goes into the app:
+   1. Open **Edge Functions → Deploy a new function → Via Editor**.
+   2. Name it `staff-admin`, replace the sample code with **all** of `supabase/functions/staff-admin/index.ts`, and click **Deploy**.
+   3. In the function's **Settings**, turn **off** "Verify JWT" (the old JWT check) and save. The database checks every request itself, and only the super admin gets through.
+3. In the app, the super admin opens **Settings → Users**:
+   - **Add a user:** type a User ID (e.g. `counter2`) and a password (at least 8 characters), then give both to that person.
+   - **Change password:** for any staff member, or **Change my password** for yourself.
+   - **Remove:** that person can no longer sign in, on any phone. Their bills stay.
+
+   Other staff don't see this section, and the server refuses them if they try.
+
+   New accounts get an email made from the super admin's own email with a `+label` (`yourname+counter2@gmail.com`). Nobody types it; staff sign in with the User ID.
+
 ### 5. Connect the app
 Open **Project Settings → API** (on newer dashboards: **API Keys**) and copy these two values:
 - **Project URL**, which looks like `https://abcdefgh.supabase.co`
@@ -90,6 +110,7 @@ Or send the two values to Claude, who can do this step for you.
 ## Security
 - Row-level security is on for every table. The public key alone can read or change nothing.
 - Only accounts on the staff list can read or write, even if sign-ups were left on by mistake.
+- Only the **super admin** can add, change or remove users. The `staff-admin` server function asks the database first, as the person calling, and changes nothing unless the answer is yes. The secret key stays on Supabase's server.
 - Bills can't be written directly:
   - `save_bill()` re-checks every price and total and issues the number.
   - `void_bill()` keeps voided bills for the audit trail.
@@ -102,4 +123,4 @@ Or send the two values to Claude, who can do this step for you.
 
       PGUSER=postgres PGHOST=localhost bash supabase/tests/run.sh
 
-- `npm run e2e:cloud` runs the real app against the real schema through `scripts/fake-supabase.mjs`, which needs the same PostgreSQL. It covers two phones, offline bills, fingerprint unlock, voids and the 3-month clean-up.
+- `npm run e2e:cloud` runs the real app against the real schema through `scripts/fake-supabase.mjs`, which needs the same PostgreSQL. It covers two phones, offline bills, fingerprint unlock, voids, the 3-month clean-up, and the super admin adding, changing and removing users (through the real `staff-admin` code).
