@@ -119,6 +119,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
 
   const buildGrid = () => {
     cards.clear();
+    counted.clear();
     const els = menu.map((d) => {
       const badge = h('span', { class: 'qty-badge', attrs: { hidden: true } });
       const el = h('button', { class: 'dish-card', dataset: { id: String(d.id) }, attrs: { type: 'button' } },
@@ -170,6 +171,8 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     }
   };
 
+  // Cards showing a count: a whole-bill change (Save, Clear) has no single dish id, so it refreshes these.
+  const counted = new Set<number>();
   const updateBadge = (id: number) => {
     const c = cards.get(id);
     if (!c) return;
@@ -178,6 +181,11 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
     c.badge.hidden = q === 0;
     c.el.classList.toggle('in-cart', q > 0);
     c.el.setAttribute('aria-label', `${byId.get(id)?.name ?? ''}, ${money(byId.get(id)?.pricePaise ?? 0)}${q ? `, ${q} in bill` : ''}`);
+    if (q > 0) counted.add(id);
+    else counted.delete(id);
+  };
+  const refreshBadges = () => {
+    for (const id of new Set([...counted, ...cart.data.lines.map((l) => l.menuId)])) updateBadge(id);
   };
 
   // ---------- Bill rendering ----------
@@ -238,6 +246,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
   const persist = debounce(() => void setMeta('cartDraft', cart.data), 300);
   const offCart = cart.subscribe((changedId) => {
     if (changedId !== undefined) updateBadge(changedId);
+    else refreshBadges(); // e.g. after Save or Clear every card must drop its count
     renderBill();
     persist();
   });

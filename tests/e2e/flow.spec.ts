@@ -191,6 +191,61 @@ test('the − button takes a dish from 3 to 2, and the saved bill says 2', async
   await expect(row.locator('.r-amt')).toHaveText('₹200.00');
 });
 
+test('after Save → Share PDF → Done no dish still looks selected (Clear too); the tagline prints below the logo', async ({ page }) => {
+  // Tagline in Settings, next to the phone number.
+  await page.goto('/#/settings');
+  await page.getByLabel('Tagline').fill('Taste the Flame');
+  await page.getByRole('button', { name: 'Save details' }).click();
+  await expect(page.locator('.toast', { hasText: 'Details saved' })).toBeVisible();
+
+  await page.goto('/#/menu');
+  await page.getByRole('button', { name: /Load Tikka Bites menu/ }).click();
+  await expect(page.locator('.dish-row')).toHaveCount(40);
+  await page.getByRole('link', { name: 'Billing' }).click();
+  const tikka = page.locator('.dish-card', { hasText: 'Chicken Tikka (5 Pcs)' });
+  await tikka.click();
+  await tikka.click();
+  await page.locator('.dish-card', { hasText: 'Full Chicken' }).first().click();
+  const selected = page.locator('.dish-card.in-cart');
+  const badges = page.locator('.dish-card .qty-badge:not([hidden])');
+  await expect(selected).toHaveCount(2);
+  if (isPhone(page)) await page.locator('.cart-bar').click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+
+  const dialog = page.locator('dialog[open]');
+  await expect(dialog.locator('.r-tagline')).toHaveText('Taste the Flame');
+  const head = await dialog.locator('.r-head').evaluate((el) => [...el.children].slice(0, 3).map((c) => c.className));
+  expect(head).toEqual(['r-logo', 'r-tagline', 'r-name']); // just below the logo
+  await dialog.getByRole('button', { name: 'Share PDF' }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Shared).__shared.length)).toBe(1);
+  await dialog.getByRole('button', { name: 'Done' }).click();
+
+  // The bill was saved and cleared: no card keeps its highlight or count.
+  await expect(selected).toHaveCount(0);
+  await expect(badges).toHaveCount(0);
+  await expect(page.locator('.cart-line')).toHaveCount(0);
+
+  // Clear does the same.
+  await tikka.click();
+  await expect(selected).toHaveCount(1);
+  if (isPhone(page)) await page.locator('.cart-bar').click();
+  await page.getByRole('button', { name: 'Clear', exact: true }).click();
+  await expect(selected).toHaveCount(0);
+  await expect(badges).toHaveCount(0);
+
+  // Emptying the tagline removes it from receipts.
+  await page.goto('/#/settings');
+  await page.getByLabel('Tagline').fill('');
+  await page.getByRole('button', { name: 'Save details' }).click();
+  await expect(page.locator('.toast', { hasText: 'Details saved' }).last()).toBeVisible();
+  await page.goto('/#/billing');
+  await tikka.click();
+  if (isPhone(page)) await page.locator('.cart-bar').click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(dialog.locator('.r-name')).toBeVisible();
+  await expect(dialog.locator('.r-tagline')).toHaveCount(0);
+});
+
 test('Share PDF downloads the receipt where there is no share menu; long bills get more pages', async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, 'canShare', { configurable: true, value: undefined }));
   await page.goto('/#/menu');

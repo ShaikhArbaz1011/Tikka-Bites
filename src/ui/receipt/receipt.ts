@@ -36,6 +36,7 @@ export function buildReceipt(bill: Bill, s: Settings, width: ReceiptWidth): HTML
       'header',
       { class: 'r-head' },
       s.printLogo !== false ? h('img', { class: 'r-logo', attrs: { src: s.logoDataUrl ?? assetUrl(BUILT_IN_LOGO), alt: '', width: 300, height: 300 } }) : null,
+      s.tagline ? h('div', { class: 'r-tagline', text: s.tagline }) : null, // just below the logo
       h('div', { class: 'r-name', text: s.name }),
       s.address ? h('div', { class: 'r-addr', text: s.address }) : null,
       s.phone ? h('div', { class: 'r-addr', text: `Ph: ${s.phone}` }) : null,

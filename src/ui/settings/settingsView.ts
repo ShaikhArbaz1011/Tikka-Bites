@@ -25,6 +25,11 @@ export async function mount(root: HTMLElement): Promise<() => void> {
 
   // ---------- Restaurant details ----------
   const name = field('Restaurant name', textInput({ maxlength: v.LIMITS.restaurantName, required: true, value: s.name }));
+  const tagline = field(
+    'Tagline',
+    textInput({ maxlength: v.LIMITS.tagline, value: s.tagline ?? '', placeholder: 'e.g. Taste the Flame' }),
+    'Printed just below the logo on every receipt. Leave empty for none.',
+  );
   const addrInput = h('textarea', { class: 'input', attrs: { maxlength: v.LIMITS.address, rows: 3 } });
   addrInput.value = s.address;
   const address = field('Address', addrInput);
@@ -39,6 +44,7 @@ export async function mount(root: HTMLElement): Promise<() => void> {
     { class: 'form-grid settings-grid', attrs: { novalidate: true } },
     name.wrap,
     phone.wrap,
+    h('div', { class: 'span-2' }, tagline.wrap),
     h('div', { class: 'span-2' }, address.wrap),
     currency.wrap,
     width.wrap,
@@ -48,15 +54,25 @@ export async function mount(root: HTMLElement): Promise<() => void> {
   detailsForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const n = v.text('Restaurant name', name.input.value, 1, v.LIMITS.restaurantName);
+    const t = v.optionalText('Tagline', tagline.input.value, v.LIMITS.tagline);
     const a = v.text('Address', address.input.value, 0, v.LIMITS.address, true);
     const p = v.phone(phone.input.value);
     const c = v.text('Currency symbol', currency.input.value, 1, v.LIMITS.currencySymbol);
     name.setError(n.ok ? null : n.error);
+    tagline.setError(t.ok ? null : t.error);
     address.setError(a.ok ? null : a.error);
     phone.setError(p.ok ? null : p.error);
     currency.setError(c.ok ? null : c.error);
-    if (!n.ok || !a.ok || !p.ok || !c.ok) return;
-    await saveSettings({ name: n.value, address: a.value, phone: p.value ?? '', currencySymbol: c.value, receiptWidth: width.input.value as ReceiptWidth, roundOff: round.checked });
+    if (!n.ok || !t.ok || !a.ok || !p.ok || !c.ok) return;
+    await saveSettings({
+      name: n.value,
+      tagline: t.value ?? '',
+      address: a.value,
+      phone: p.value ?? '',
+      currencySymbol: c.value,
+      receiptWidth: width.input.value as ReceiptWidth,
+      roundOff: round.checked,
+    });
     toast('Details saved', 'success');
   });
 

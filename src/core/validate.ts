@@ -21,6 +21,7 @@ export const LIMITS = {
   customerName: 60,
   tableNo: 10,
   restaurantName: 80,
+  tagline: 60,
   address: 200,
   phone: 20,
   cheesyLine: 120,

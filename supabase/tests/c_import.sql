@@ -55,7 +55,13 @@ begin
   assert s ? 'logoDataUrl', 'logo set';
   s := public.patch_settings('{"roundOff":false}', '{logoDataUrl}');
   assert not (s ? 'logoDataUrl') and (s ->> 'roundOff')::boolean = false, 'logo removed and round-off changed in one step';
+  s := public.patch_settings('{"tagline":"Taste the Flame"}');
+  assert s ->> 'tagline' = 'Taste the Flame' and s ->> 'phone' = '1234567890', 'tagline saved, the rest kept';
+  s := public.patch_settings('{"tagline":""}');
+  assert s ->> 'tagline' = '', 'tagline can be emptied';
 end $$;
+select t.expect_error(format($q$select public.patch_settings('{"tagline":"%s"}')$q$, repeat('x', 61)), 'Invalid settings'); -- 60 like the app
+select t.expect_error($q$select public.patch_settings('{"tagline":42}')$q$, 'Invalid settings');
 select t.expect_error($q$select public.patch_settings('{"receiptWidth":"100"}')$q$, 'Invalid settings');
 select t.expect_error($q$select public.patch_settings('{"name":""}')$q$, 'Invalid settings');
 select t.expect_error($q$select public.patch_settings('{"roundOff":"yes"}')$q$, 'Invalid settings');

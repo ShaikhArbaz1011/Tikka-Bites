@@ -226,6 +226,7 @@ function layout(ctx: Ctx, bill: Bill, s: Settings, logo: HTMLImageElement | null
 
   // Shop header, as on the printed receipt.
   const img = logo;
+  const tagline = s.tagline ? wrap(ctx, s.tagline, W, T.cheesy) : [];
   const name = wrap(ctx, s.name, W, T.name);
   const contact = [...(s.address ? wrap(ctx, s.address, W, T.small) : []), ...(s.phone ? wrap(ctx, `Ph: ${s.phone}`, W, T.small) : [])];
   blocks.push(
@@ -233,6 +234,10 @@ function layout(ctx: Ctx, bill: Bill, s: Settings, logo: HTMLImageElement | null
       if (img) {
         p.art((c, top) => drawLogo(c, img, top));
         p.gap(LOGO + 8);
+      }
+      if (tagline.length) {
+        for (const l of tagline) p.line(l, CX, T.cheesy, 'center'); // just below the logo
+        p.gap(4);
       }
       for (const l of name) p.line(l, CX, T.name, 'center');
       p.gap(2);

@@ -394,8 +394,9 @@ language plpgsql immutable set search_path = public as $$
 begin
   if jsonb_typeof(p) is distinct from 'object'
      or exists (select 1 from jsonb_object_keys(p) k
-                 where k not in ('name', 'address', 'phone', 'currencySymbol', 'receiptWidth', 'roundOff', 'printLogo', 'lastBackupAt', 'logoDataUrl'))
+                 where k not in ('name', 'tagline', 'address', 'phone', 'currencySymbol', 'receiptWidth', 'roundOff', 'printLogo', 'lastBackupAt', 'logoDataUrl'))
      or jsonb_typeof(p -> 'name') is distinct from 'string' or char_length(p ->> 'name') not between 1 and 80
+     or (p ? 'tagline' and (jsonb_typeof(p -> 'tagline') <> 'string' or char_length(p ->> 'tagline') > 60))
      or (p ? 'address' and (jsonb_typeof(p -> 'address') <> 'string' or char_length(p ->> 'address') > 200))
      or (p ? 'phone' and (jsonb_typeof(p -> 'phone') <> 'string' or char_length(p ->> 'phone') > 20))
      or jsonb_typeof(p -> 'currencySymbol') is distinct from 'string' or char_length(p ->> 'currencySymbol') not between 1 and 3

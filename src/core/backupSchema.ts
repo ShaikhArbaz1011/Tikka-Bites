@@ -89,8 +89,9 @@ function arr(v: unknown, path: string, max: number): unknown[] {
 }
 
 function checkSettings(v: unknown, p: string): void {
-  const o = obj(v, p, ['name', 'address', 'phone', 'currencySymbol', 'receiptWidth', 'roundOff'], ['logoDataUrl', 'lastBackupAt', 'printLogo']);
+  const o = obj(v, p, ['name', 'address', 'phone', 'currencySymbol', 'receiptWidth', 'roundOff'], ['logoDataUrl', 'lastBackupAt', 'printLogo', 'tagline']);
   str(o['name'], `${p}.name`, 1, LIMITS.restaurantName);
+  if ('tagline' in o) str(o['tagline'], `${p}.tagline`, 0, LIMITS.tagline);
   str(o['address'], `${p}.address`, 0, LIMITS.address);
   str(o['phone'], `${p}.phone`, 0, LIMITS.phone);
   str(o['currencySymbol'], `${p}.currencySymbol`, 1, LIMITS.currencySymbol);

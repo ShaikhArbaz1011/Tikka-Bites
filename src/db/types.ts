@@ -69,6 +69,8 @@ export interface Bill {
 
 export interface Settings {
   name: string;
+  /** Short line printed just below the logo, e.g. "Taste the Flame" (optional). */
+  tagline?: string;
   address: string;
   phone: string;
   logoDataUrl?: string;

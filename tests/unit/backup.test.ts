@@ -80,12 +80,22 @@ describe('strict import validation', () => {
     ['string instead of bool', (j) => (j.menu[0].isVeg = 'yes'), /true or false/],
     ['non-image logo', (j) => (j.settings.logoDataUrl = 'data:text/html;base64,PHNjcmlwdD4='), /PNG, JPEG or WEBP/],
     ['too-long name', (j) => (j.menu[0].name = 'x'.repeat(61)), /1–60 characters/],
+    ['too-long tagline', (j) => (j.settings.tagline = 'x'.repeat(61)), /tagline/],
+    ['tagline that is not text', (j) => (j.settings.tagline = 42), /tagline/],
     ['paid bill with void details', (j) => (j.bills[0].voidReason = 'x'), /cannot have void details/],
     ['void bill without reason', (j) => delete j.bills[1].voidReason, /voidReason/],
   ])('rejects %s', async (_name, fn, expected) => {
     const r = await mutate(fn);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(expected);
+  });
+
+  it('accepts a tagline, and backups made before taglines existed', async () => {
+    await seed();
+    const j = await backupJson();
+    expect(validateBackup(j).ok).toBe(true); // no tagline
+    (j as { settings: { tagline?: string } }).settings.tagline = 'Taste the Flame';
+    expect(validateBackup(j).ok).toBe(true);
   });
 
   it('still restores old backups whose bills were paid by card', async () => {
