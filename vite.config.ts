@@ -5,12 +5,15 @@ import { createHash } from 'node:crypto';
 import { resolveCloudConfig, connectSrc, NO_CLOUD } from './src/core/cloudConfig';
 
 /**
- * Shared database settings (cloud.config.json, or VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).
+ * Shared database settings (cloud.config.json, or VITE_CLOUD_BACKEND / VITE_SHEETS_URL /
+ * VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).
  * Unit tests always run in local-only mode unless a test switches it on itself.
  */
 const CLOUD = process.env['VITEST']
   ? NO_CLOUD
   : resolveCloudConfig(JSON.parse(readFileSync('cloud.config.json', 'utf8')), {
+      backend: process.env['VITE_CLOUD_BACKEND'],
+      sheetsUrl: process.env['VITE_SHEETS_URL'],
       url: process.env['VITE_SUPABASE_URL'],
       anonKey: process.env['VITE_SUPABASE_ANON_KEY'],
     });
@@ -54,8 +57,9 @@ function serviceWorker(): Plugin {
  * vercel.json), which adds frame-ancestors (not allowed in <meta>).
  * Build only: the dev server injects inline styles for hot reload.
  * connect-src names the ONE shared database (if any), so the page can talk to
- * nothing else. (The Netlify/Vercel header allows https://*.supabase.co; the browser
- * enforces both, so the effective rule is still this exact address.)
+ * nothing else. (The Netlify/Vercel header allows https://*.supabase.co and Google's
+ * two web app addresses; the browser enforces both, so the effective rule is still
+ * this build's own database.)
  */
 const META_CSP = `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src ${connectSrc(CLOUD)}; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; upgrade-insecure-requests`;
 
@@ -72,6 +76,7 @@ export default defineConfig({
   base: './',
   plugins: [serviceWorker(), metaCsp()],
   define: {
+    __CLOUD_BACKEND__: JSON.stringify(CLOUD.backend),
     __CLOUD_URL__: JSON.stringify(CLOUD.url),
     __CLOUD_KEY__: JSON.stringify(CLOUD.anonKey),
   },

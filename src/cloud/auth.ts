@@ -1,10 +1,15 @@
 /**
- * Sign-in with a User ID and password (Supabase Auth, email + password underneath).
- * The User ID is turned into the account email by public.login_email(); typing the
- * email itself also works. The session is kept in this phone's IndexedDB and the
- * access token is refreshed automatically (one refresh at a time).
+ * Sign-in with a User ID and password.
+ *  - Supabase: Supabase Auth (email + password underneath). The User ID is turned into
+ *    the account email by public.login_email(); typing the email itself also works.
+ *  - Google Sheets: the sheet's script checks the password and signs the tokens
+ *    (google-sheets/Code.gs, sign_in / refresh_session).
+ * The session is kept in this phone's IndexedDB and the access token is refreshed
+ * automatically (one refresh at a time).
  */
 import { request, rpc } from './http';
+import { call } from './sheetsHttp';
+import { onSheets } from './config';
 import { CloudError, SIGNED_OUT_MESSAGE } from './errors';
 import { getMeta, setMeta, deleteMeta } from '../db/settingsRepo';
 import type { CloudSession } from '../db/types';
@@ -16,6 +21,15 @@ interface TokenResponse {
   expires_in?: number;
   expires_at?: number;
   user?: { id: string; email?: string };
+}
+
+/** What the sheet's script answers to sign_in and refresh_session. */
+interface SheetSession {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+  userId: string;
+  username: string;
 }
 
 /** Refresh this long before the token runs out. */
@@ -52,6 +66,11 @@ function toSession(t: TokenResponse, username: string, now: number): CloudSessio
   return { accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt, userId: t.user.id, email: t.user.email ?? '', username };
 }
 
+function fromSheet(t: SheetSession): CloudSession {
+  if (!t?.accessToken || !t.refreshToken || !t.username || typeof t.expiresAt !== 'number') throw new CloudError('Unexpected reply from the sign-in service.', 'server');
+  return { accessToken: t.accessToken, refreshToken: t.refreshToken, expiresAt: t.expiresAt, userId: t.userId, email: '', username: t.username };
+}
+
 /** Resolve what was typed (User ID or email) to the account email. */
 export async function emailFor(login: string): Promise<string> {
   const typed = login.trim().toLowerCase();
@@ -64,6 +83,14 @@ export async function emailFor(login: string): Promise<string> {
 
 export async function signIn(login: string, password: string, now = Date.now()): Promise<CloudSession> {
   if (!login.trim() || !password) throw new CloudError('Enter your User ID and password.', 'auth');
+  if (onSheets()) {
+    const typed = login.trim().toLowerCase();
+    if (!USER_ID_RE.test(typed)) throw new CloudError('Wrong User ID or password.', 'auth');
+    // The sheet's own messages: wrong password, too many tries, not set up, sheet changed by hand.
+    const s = fromSheet(await call<SheetSession>('sign_in', { username: typed, password }));
+    await store(s);
+    return s;
+  }
   const email = await emailFor(login);
   let t: TokenResponse;
   try {
@@ -96,18 +123,20 @@ export function refresh(now = Date.now()): Promise<CloudSession> {
     try {
       const s = await loadSession();
       if (!s) throw new CloudError(SIGNED_OUT_MESSAGE, 'auth');
-      let t: TokenResponse;
+      let next: CloudSession;
       try {
-        t = await request<TokenResponse>('/auth/v1/token?grant_type=refresh_token', { body: { refresh_token: s.refreshToken } });
+        next = onSheets()
+          ? fromSheet(await call<SheetSession>('refresh_session', { refreshToken: s.refreshToken }))
+          : toSession(await request<TokenResponse>('/auth/v1/token?grant_type=refresh_token', { body: { refresh_token: s.refreshToken } }), s.username, now);
       } catch (e) {
         // A refused refresh token means the sign-in is over (password changed, removed, or expired).
-        if (e instanceof CloudError && e.kind !== 'offline') {
+        // The sheet says so with 'auth'; a busy Google Sheet is not a reason to sign out.
+        if (e instanceof CloudError && (onSheets() ? e.kind === 'auth' : e.kind !== 'offline')) {
           await store(null);
           throw new CloudError(SIGNED_OUT_MESSAGE, 'auth', e.status);
         }
         throw e;
       }
-      const next = toSession(t, s.username, now);
       await store(next);
       return next;
     } finally {
@@ -119,8 +148,9 @@ export function refresh(now = Date.now()): Promise<CloudSession> {
 
 export async function signOut(): Promise<void> {
   const s = await loadSession();
-  if (s) {
-    // Best effort: tell the server; signed out on this phone either way.
+  if (s && !onSheets()) {
+    // Best effort: tell the server; signed out on this phone either way. (The sheet's tokens
+    // just expire, so signing out there only affects this phone.)
     await request('/auth/v1/logout', { method: 'POST', token: s.accessToken, timeoutMs: 4000 }).catch(() => undefined);
   }
   await store(null);

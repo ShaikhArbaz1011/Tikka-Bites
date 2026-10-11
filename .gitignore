@@ -9,3 +9,4 @@ seed-*.json
 # Original brand source files (logos PDF, photos): kept locally, derived assets live in public/
 reference_files/
 dist-cloud
+dist-sheets

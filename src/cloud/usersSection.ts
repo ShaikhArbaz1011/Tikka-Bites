@@ -1,7 +1,8 @@
 /**
  * Settings → Users (shared database, super admin only): who can sign in, add a user,
  * change a password, remove a user. Hidden for everyone else; the database checks
- * the role again on every change (supabase/functions/staff-admin).
+ * the role again on every change (supabase/functions/staff-admin, or the sheet's script).
+ * With Google Sheets it also says whether the Backup sheet is up to date.
  */
 import '../styles/auth.css';
 import { h, replaceChildren } from '../ui/dom';
@@ -9,8 +10,10 @@ import { field, textInput, type Field } from '../ui/components/form';
 import { confirmDialog, openModal } from '../ui/components/modal';
 import { toast } from '../ui/components/toast';
 import * as v from '../core/validate';
-import { api, type StaffRow } from './api';
+import { api, type SheetStatus, type StaffRow } from './api';
 import { CloudError } from './errors';
+import { onSheets } from './config';
+import { formatDateTime } from '../core/dates';
 
 type Section = (title: string, desc: string, ...children: Node[]) => HTMLElement;
 
@@ -61,9 +64,20 @@ function changePassword(username: string, me: boolean): void {
   pass.input.focus();
 }
 
+/** One line about the Backup Google Sheet and the last nightly check. */
+export function sheetStatusText(s: SheetStatus): string {
+  const parts = [
+    s.backupOk ? 'Backup Google Sheet: up to date.' : `Backup Google Sheet: ${s.backupBehind} change${s.backupBehind === 1 ? '' : 's'} behind. It catches up by itself${s.backupError ? ` (last problem: ${s.backupError})` : ''}.`,
+  ];
+  if (s.lastCopyAt) parts.push(`Last nightly copy: ${formatDateTime(s.lastCopyAt)}.`);
+  if (s.health && !s.health.ok) parts.push(`The last check found a problem: ${s.health.problems.join(' ')} See the Status tab in “Tikka Bites – Control”.`);
+  return parts.join(' ');
+}
+
 export function usersSection(section: Section): HTMLElement {
   const list = h('ul', { class: 'user-list', attrs: { 'aria-label': 'People who can sign in' } });
   const status = h('p', { class: 'muted', attrs: { role: 'status' } });
+  const sheet = h('p', { class: 'muted', attrs: { hidden: true } });
 
   const user = field('User ID', textInput({ maxlength: 30, autocapitalize: 'none', spellcheck: 'false' }), 'Small letters, numbers, dot, dash or underscore, e.g. counter2');
   const pass = passwordField('Password', 'At least 8 characters. Give it to the person along with the User ID.');
@@ -75,6 +89,7 @@ export function usersSection(section: Section): HTMLElement {
     'Only you, the super admin, see this. Add the people who may sign in, change a password, or remove someone.',
     list,
     status,
+    sheet,
     h('h3', { class: 'users-sub', text: 'Add a user' }),
     form,
   );
@@ -153,6 +168,10 @@ export function usersSection(section: Section): HTMLElement {
       if ((await api.myRole()) !== 'super_admin') return;
       await load();
       el.hidden = false;
+      if (onSheets()) {
+        sheet.textContent = sheetStatusText(await api.sheetStatus());
+        sheet.hidden = false;
+      }
     } catch {
       // offline or not allowed: stays hidden
     }

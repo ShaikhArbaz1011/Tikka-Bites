@@ -1,5 +1,7 @@
 /**
  * Start-up when the shared database is on (loaded only in that case):
+ *   0. this build uses a different shared database (e.g. Supabase → Google Sheets):
+ *      forget the old sign-in and sync position; keep this phone's data
  *   1. sign in (User ID + password), or unlock with the fingerprint
  *   2. first time on this database: set it up from this phone, or join it
  *   3. plug the shared-database saving in (db/hooks.ts) and keep syncing
@@ -11,7 +13,7 @@ import { showSignIn, showLock, offerBiometric, showNotice, showBusy } from './sc
 import { api } from './api';
 import { CloudError } from './errors';
 import { cloudRepo } from './cloudRepo';
-import { resetSharedCopy } from './localStore';
+import { countersFor, forgetOtherDatabase, resetSharedCopy } from './localStore';
 import { startAutoSync, syncNow } from './sync';
 import { mountSyncPills } from './syncPill';
 import { setCloudHooks } from '../db/hooks';
@@ -56,8 +58,9 @@ async function setUpFromThisPhone(): Promise<void> {
   try {
     await purgeOldMonths();
     const db = await getDB();
-    await api.importDeviceData(await listMenu(true), await listLines(), await getSettings(), await db.getAll('counters'));
-    const all: Bill[] = await db.getAll('bills');
+    // Bills still waiting to upload (temporary OFF- numbers) go up through the normal queue afterwards.
+    const all: Bill[] = (await db.getAll('bills')).filter((b) => !b.sync);
+    await api.importDeviceData(await listMenu(true), await listLines(), await getSettings(), countersFor(await db.getAll('counters'), all));
     for (let i = 0; i < all.length; i += 500) {
       busy.set(`Uploading bills ${Math.min(i + 500, all.length).toLocaleString('en-IN')} of ${all.length.toLocaleString('en-IN')}…`);
       await api.importBills(all.slice(i, i + 500));
@@ -144,6 +147,7 @@ function relockWhenAway(): void {
 }
 
 export async function startCloud(): Promise<void> {
+  await forgetOtherDatabase();
   await unlockFlow();
   if (!(await loadSession())) await signInFlow();
   await ensureJoined();

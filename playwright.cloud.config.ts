@@ -26,7 +26,7 @@ export default defineConfig({
     {
       command: 'npx vite build --outDir dist-cloud --emptyOutDir && node scripts/serve-dist.mjs 4178 --root dist-cloud --pages /Tikka-Bites/',
       url: 'http://localhost:4178/Tikka-Bites/',
-      env: { VITE_SUPABASE_URL: SUPABASE, VITE_SUPABASE_ANON_KEY: KEY },
+      env: { VITE_CLOUD_BACKEND: 'supabase', VITE_SUPABASE_URL: SUPABASE, VITE_SUPABASE_ANON_KEY: KEY },
       reuseExistingServer: false,
       timeout: 180_000,
     },

@@ -5,6 +5,7 @@ import { toggle } from '../ui/components/form';
 import { confirmDialog } from '../ui/components/modal';
 import { toast } from '../ui/components/toast';
 import { currentSession, signOut } from './auth';
+import { onSheets } from './config';
 import { biometricAvailable, biometricEnrolled, disableBiometric, enrollBiometric } from './biometric';
 import { pendingBills, voidPendingLocally } from './localStore';
 import { onSyncState, syncNow } from './sync';
@@ -97,7 +98,12 @@ export async function accountSection(): Promise<{ body: HTMLElement; cleanup(): 
     status,
     h('div', { class: 'btn-row' }, syncBtn),
     attention,
-    h('p', { class: 'muted', text: 'Only this month and the 2 before it are kept, on every phone and in the shared database. On the 1st of each month the oldest month is deleted, so download its Excel from Reports before then.' }),
+    h('p', {
+      class: 'muted',
+      text: onSheets()
+        ? 'This month and the 2 before it are kept on every phone and in the Main Google Sheet. Older months stay in the Backup Google Sheet in the owner’s Google Drive.'
+        : 'Only this month and the 2 before it are kept, on every phone and in the shared database. On the 1st of each month the oldest month is deleted, so download its Excel from Reports before then.',
+    }),
   );
   return { body, cleanup: off };
 }

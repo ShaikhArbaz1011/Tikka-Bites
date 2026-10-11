@@ -42,7 +42,7 @@ beforeEach(async () => {
   resetAuthForTests();
   resetSyncForTests();
   setCloudHooks(null);
-  setCloudConfigForTests({ url: URL_, anonKey: 'anon-key-000000000000000000' });
+  setCloudConfigForTests({ backend: 'supabase', url: URL_, anonKey: 'anon-key-000000000000000000' });
   routes = {};
   calls = [];
   vi.stubGlobal('navigator', { onLine: true });

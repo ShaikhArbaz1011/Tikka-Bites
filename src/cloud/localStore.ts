@@ -4,9 +4,12 @@
  * the monthly totals exact (the same applyBill() the local-only mode uses).
  */
 import { getDB, SETTINGS_KEY } from '../db/db';
+import { getMeta, setMeta, deleteMeta } from '../db/settingsRepo';
 import { applyBill, emptyStats } from '../core/stats';
+import { parseBillNo } from '../core/billNo';
+import { cloudConfig } from './config';
 import { dishFromRow, lineFromRow, type LineRow, type MenuRow } from './api';
-import type { Bill, MonthlyStats, Settings } from '../db/types';
+import type { Bill, Counter, MonthlyStats, Settings } from '../db/types';
 
 const STORES = ['menu', 'cheesyLines', 'settings', 'bills', 'monthlyStats', 'counters', 'meta'] as const;
 
@@ -177,4 +180,34 @@ export async function resetSharedCopy(): Promise<void> {
   await meta.delete('cloudRev');
   await meta.delete('cloudDbId');
   await tx.done;
+}
+
+/**
+ * The shared database this phone last used ("sheets https://…/exec"). Phones from before
+ * this was recorded were on Supabase. Another one now: the old sign-in and change number
+ * mean nothing there, so they go; the data and any bills waiting to upload stay, and the
+ * usual first-time screens follow (set up from this phone, or join).
+ */
+export async function forgetOtherDatabase(): Promise<boolean> {
+  const c = cloudConfig();
+  const now = `${c.backend} ${c.url}`;
+  const before = await getMeta('cloudBackend');
+  const changed = before === undefined ? c.backend !== 'supabase' && (await getMeta('cloudDbId')) !== undefined : before !== now;
+  if (changed) {
+    await deleteMeta('session');
+    await deleteMeta('cloudRev');
+    await deleteMeta('cloudDbId');
+  }
+  if (before !== now) await setMeta('cloudBackend', now);
+  return changed;
+}
+
+/** Receipt counters for the upload: this phone's own, raised to the highest number among its bills. */
+export function countersFor(stored: Counter[], bills: Bill[]): Counter[] {
+  const last = new Map(stored.map((c) => [c.monthKey, c.last]));
+  for (const b of bills) {
+    const p = parseBillNo(b.billNo);
+    if (p && p.seq > (last.get(p.monthKey) ?? 0)) last.set(p.monthKey, p.seq);
+  }
+  return [...last].map(([monthKey, n]) => ({ monthKey, last: n }));
 }

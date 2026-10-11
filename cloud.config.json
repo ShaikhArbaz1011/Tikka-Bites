@@ -1,5 +1,7 @@
 {
-  "//": "Shared database for all phones (Supabase). Fill in BOTH values to switch it on; leave both empty to keep all data on each phone only. Setup guide: supabase/README.md. The anon / publishable key is meant to be public. NEVER put the service_role / secret key here: the build refuses it.",
+  "//": "Shared database for all phones. backend: \"sheets\" = the owner's Google Sheets (fill sheetsUrl with the Apps Script web app address; setup guide: google-sheets/README.md), \"supabase\" = Supabase (fill supabaseUrl and supabaseAnonKey; guide: supabase/README.md), \"\" = each phone keeps its own data. The Supabase anon / publishable key is meant to be public. NEVER put the service_role / secret key here: the build refuses it.",
+  "backend": "supabase",
+  "sheetsUrl": "",
   "supabaseUrl": "https://odzdzggbyahgfvmzinfg.supabase.co",
   "supabaseAnonKey": "sb_publishable_EKGJeKbVcUROyC85f0WpnA_nCgcymy_"
 }

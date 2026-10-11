@@ -13,7 +13,7 @@ export default defineConfig({
     command: 'npm run build && node scripts/serve-dist.mjs 4174',
     url: 'http://localhost:4174',
     // These tests cover LOCAL-ONLY mode: empty values override cloud.config.json (shared mode: npm run e2e:cloud).
-    env: { VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' },
+    env: { VITE_CLOUD_BACKEND: '', VITE_SUPABASE_URL: '', VITE_SUPABASE_ANON_KEY: '' },
     reuseExistingServer: false,
     timeout: 120_000,
   },

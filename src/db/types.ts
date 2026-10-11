@@ -127,7 +127,9 @@ export interface MetaMap {
   shuffleBag: BagState;
   cartDraft: unknown;
   sampleMenuOffered: boolean;
-  // ---- Shared database (Supabase) ----
+  // ---- Shared database (Supabase or Google Sheets) ----
+  /** Which shared database this phone last used: "<backend> <url>" (src/cloud/boot.ts). */
+  cloudBackend: string;
   /** Signed-in account on this phone. */
   session: CloudSession;
   /** Last change number received from the shared database. */

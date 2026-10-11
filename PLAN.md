@@ -76,6 +76,46 @@ services. All data lives in the browser (IndexedDB). Deploys free on Netlify or 
     - `tests/e2e-cloud/shared.spec.ts`: two phones run against the real schema via `scripts/fake-supabase.mjs`.
     - `tests/e2e-cloud/users.spec.ts`: the super admin manages users through the real function code.
 
+## 0d. Google Sheets as the shared database (owner request, 11 Oct 2026)
+
+The client wants the data in Google Sheets in their own Google Drive instead of Supabase, with a second sheet as a backup.
+
+- **Backend switch.** `cloud.config.json` → `backend: "sheets"` + `sheetsUrl` (the Apps Script web app address). Supabase stays available (`backend: "supabase"`) and nothing was removed. `src/cloud/api.ts` sends the same function names to either backend. `src/cloud/sheetsHttp.ts` sends a POST with a text body and no custom headers.
+- **Server.** `google-sheets/Code.gs` (Google Apps Script, runs as the owner) ports every rule from `supabase/schema.sql`:
+  - bill checks and receipt numbers
+  - offline bills
+  - void
+  - settings
+  - first-phone import (resumable)
+  - 3-month purge
+  - super admin and users
+
+  Sign-in uses salted PBKDF2-HMAC-SHA256 password hashes and HMAC-signed tokens (12 h access, 60 days refresh). A token version signs a person out on every phone when the owner changes their password or removes them.
+- **Files.**
+  - Control (the script, menu and Status tab)
+  - Main (3 months)
+  - Backup (same tabs, every change copied in the same request, keeps all months)
+  - Nightly copies (last 14)
+
+  Main → Backup copying catches up by itself after a failure. A month is cleared from Main only once the Backup has it.
+- **Corruption guards.**
+  - One script lock with a flush before release.
+  - Validate, then write.
+  - Numbers reserved before rows.
+  - One row per record, written in one call.
+  - Header check against hand edits.
+  - Plain-text cells and formula escaping.
+  - JSON Data columns as the trusted copy, split at 45,000 characters without breaking emoji.
+  - Health check (nightly and from the menu).
+  - "Switch the app to the Backup sheet".
+- **Moving phones over.** `forgetOtherDatabase` (localStore) drops the old sign-in and sync position when the backend changes, keeping the data and the outbox. Then the first phone runs "Set up from this phone" (pending `OFF-` bills are skipped and upload afterwards; counters are raised to the phone's highest receipt numbers).
+- **Hosting stays on Netlify**, with GitHub Pages as a spare. Vercel's free plan forbids commercial use. Netlify's free plan has 300 credits a month, and a production deploy costs 15, so changes are pushed together.
+- **Tests.**
+  - `tests/helpers/fakeAppsScript.mjs` (behaves like Google Sheets: coercion, formulas, cell limit, lock and flush rules, crash injection)
+  - `tests/unit/sheetsBackend.test.ts` (SQL cases ported, plus crash-at-every-write, hand edits, Backup offline, 300 random changes, switch to Backup)
+  - `tests/unit/sheetsClient.test.ts` (the app's code against the real script)
+  - `npm run e2e:sheets`
+
 ## 1. Design source
 
 `/design` does not exist in the repo, and the frontend-design plugin is not

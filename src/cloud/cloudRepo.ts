@@ -7,6 +7,7 @@
  * Results are written into this phone's copy, which the screens read.
  */
 import { api, dishFromRow, dishToRow, lineFromRow } from './api';
+import { onSheets } from './config';
 import { CloudError } from './errors';
 import { applyChanges, storePendingBill, voidPendingLocally } from './localStore';
 import { syncNow } from './sync';
@@ -20,8 +21,8 @@ import { draw, type BagState } from '../core/shuffleBag';
 import type { CloudHooks } from '../db/hooks';
 import type { Bill, BillItem, Settings } from '../db/types';
 
-/** How long to wait for the server before saving the bill offline instead. */
-const ONLINE_SAVE_TIMEOUT_MS = 6000;
+/** How long to wait for the server before saving the bill offline instead (Google's script starts slower). */
+const onlineSaveTimeoutMs = () => (onSheets() ? 10_000 : 6000);
 
 /** Offline-safe kinds: save the bill on the phone and upload it later. */
 const SAVE_OFFLINE: ReadonlySet<CloudError['kind']> = new Set(['offline', 'server', 'auth']);
@@ -86,7 +87,7 @@ async function saveBill(draft: BillDraft, now: number): Promise<Bill> {
         totalPaise: bill.totalPaise,
         cheesyLine: bill.cheesyLine,
       },
-      ONLINE_SAVE_TIMEOUT_MS,
+      onlineSaveTimeoutMs(),
     );
     await applyChanges({ bills: [saved] });
     return saved;

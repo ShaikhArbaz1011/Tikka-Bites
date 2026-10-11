@@ -11,7 +11,8 @@
     "e2e": "playwright test",
     "serve:dist": "node scripts/serve-dist.mjs",
     "seed:50k": "node scripts/gen-backup.mjs 50000 seed-50k.json",
-    "e2e:cloud": "playwright test -c playwright.cloud.config.ts"
+    "e2e:cloud": "playwright test -c playwright.cloud.config.ts",
+    "e2e:sheets": "playwright test -c playwright.sheets.config.ts"
   },
   "dependencies": {
     "idb": "^8.0.3"

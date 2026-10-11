@@ -1,8 +1,11 @@
 /**
- * Every call the app makes to the shared database. Signed-in calls refresh the
- * token and retry once if it had just expired.
+ * Every call the app makes to the shared database: Supabase (SQL functions and tables)
+ * or the owner's Google Sheets (the same-named functions in google-sheets/Code.gs).
+ * Signed-in calls refresh the token and retry once if it had just expired.
  */
 import { request, rpc } from './http';
+import { call } from './sheetsHttp';
+import { onSheets } from './config';
 import { accessToken, refresh } from './auth';
 import { CloudError } from './errors';
 import type { Bill, CheesyLine, Counter, Dish, Settings } from '../db/types';
@@ -55,6 +58,17 @@ export interface StaffRow {
 
 export type StaffAction = 'add' | 'reset' | 'remove';
 
+/** Google Sheets only: is the Backup sheet up to date, and what did the last check find? (super admin) */
+export interface SheetStatus {
+  backupOk: boolean;
+  /** Changes not yet copied to the Backup (it catches up on the next change or at night). */
+  backupBehind: number;
+  backupError: string | null;
+  lastNightlyAt: number | null;
+  lastCopyAt: number | null;
+  health: { at: number; ok: boolean; problems: string[] } | null;
+}
+
 export function dishFromRow(r: MenuRow): Dish {
   return {
     id: Number(r.id),
@@ -89,6 +103,11 @@ async function authed<T>(call: (token: string) => Promise<T>): Promise<T> {
   }
 }
 
+/** A server function: the SQL function on Supabase, or the function of the same name in the sheet's script. */
+function fn<T>(name: string, args: Record<string, unknown>, token: string, timeoutMs?: number): Promise<T> {
+  return onSheets() ? call<T>(name, args, token, timeoutMs) : rpc<T>(name, args, token, timeoutMs);
+}
+
 function one<T>(rows: T[] | null, what: string): T {
   const row = rows?.[0];
   if (!row) throw new CloudError(`${what} not found in the shared database.`, 'rejected');
@@ -96,34 +115,49 @@ function one<T>(rows: T[] | null, what: string): T {
 }
 
 export const api = {
-  pullChanges: (since: number, limit = 500) => authed((t) => rpc<PullPage>('pull_changes', { p_since: since, p_limit: limit }, t)),
+  /** Each request to the sheet has a fixed cost, so it sends bigger pages (and may take longer). */
+  pullChanges: (since: number, limit = onSheets() ? 2000 : 500) =>
+    authed((t) => fn<PullPage>('pull_changes', { p_since: since, p_limit: limit }, t, onSheets() ? 60_000 : undefined)),
   /** Online bills are numbered by the server; `offline` bills keep their sale time and price. */
-  saveBill: (bill: Record<string, unknown>, timeoutMs?: number) => authed((t) => rpc<Bill>('save_bill', { p_bill: bill }, t, timeoutMs)),
-  voidBill: (billNo: string, reason: string) => authed((t) => rpc<Bill>('void_bill', { p_bill_no: billNo, p_reason: reason }, t)),
-  patchSettings: (set: Partial<Settings>, unset: string[] = []) => authed((t) => rpc<Settings>('patch_settings', { p_set: set, p_unset: unset }, t)),
-  purgeOldMonths: () => authed((t) => rpc<number>('purge_old_months', {}, t)),
+  saveBill: (bill: Record<string, unknown>, timeoutMs?: number) => authed((t) => fn<Bill>('save_bill', { p_bill: bill }, t, timeoutMs)),
+  voidBill: (billNo: string, reason: string) => authed((t) => fn<Bill>('void_bill', { p_bill_no: billNo, p_reason: reason }, t)),
+  patchSettings: (set: Partial<Settings>, unset: string[] = []) => authed((t) => fn<Settings>('patch_settings', { p_set: set, p_unset: unset }, t)),
+  purgeOldMonths: () => authed((t) => fn<number>('purge_old_months', {}, t)),
 
   importDeviceData: (menu: Dish[], lines: CheesyLine[], settings: Settings, counters: Counter[]) =>
-    authed((t) => rpc<null>('import_device_data', { p_menu: menu, p_lines: lines, p_settings: settings, p_counters: counters }, t, 60_000)),
-  importBills: (bills: Bill[]) => authed((t) => rpc<number>('import_bills', { p_bills: bills }, t, 60_000)),
-  finishImport: () => authed((t) => rpc<null>('finish_import', {}, t)),
+    authed((t) => fn<null>('import_device_data', { p_menu: menu, p_lines: lines, p_settings: settings, p_counters: counters }, t, 60_000)),
+  importBills: (bills: Bill[]) => authed((t) => fn<number>('import_bills', { p_bills: bills }, t, 60_000)),
+  finishImport: () => authed((t) => fn<null>('finish_import', {}, t)),
 
   insertDishes: (rows: ReturnType<typeof dishToRow>[]) =>
-    authed((t) => request<MenuRow[]>('/rest/v1/menu', { body: rows, token: t, prefer: 'return=representation' })),
+    authed((t) => (onSheets() ? call<MenuRow[]>('insert_dishes', { p_rows: rows }, t) : request<MenuRow[]>('/rest/v1/menu', { body: rows, token: t, prefer: 'return=representation' }))),
   updateDish: async (id: number, patch: Partial<MenuRow>) =>
-    one(await authed((t) => request<MenuRow[]>(`/rest/v1/menu?id=eq.${Math.trunc(id)}`, { method: 'PATCH', body: patch, token: t, prefer: 'return=representation' })), 'Dish'),
+    onSheets()
+      ? authed((t) => call<MenuRow>('update_dish', { p_id: Math.trunc(id), p_patch: patch }, t))
+      : one(await authed((t) => request<MenuRow[]>(`/rest/v1/menu?id=eq.${Math.trunc(id)}`, { method: 'PATCH', body: patch, token: t, prefer: 'return=representation' })), 'Dish'),
   insertLine: async (text: string) =>
-    one(await authed((t) => request<LineRow[]>('/rest/v1/cheesy_lines', { body: { text, active: true }, token: t, prefer: 'return=representation' })), 'Line'),
+    onSheets()
+      ? authed((t) => call<LineRow>('insert_line', { p_text: text }, t))
+      : one(await authed((t) => request<LineRow[]>('/rest/v1/cheesy_lines', { body: { text, active: true }, token: t, prefer: 'return=representation' })), 'Line'),
   updateLine: async (id: number, patch: Partial<LineRow>) =>
-    one(await authed((t) => request<LineRow[]>(`/rest/v1/cheesy_lines?id=eq.${Math.trunc(id)}`, { method: 'PATCH', body: patch, token: t, prefer: 'return=representation' })), 'Line'),
+    onSheets()
+      ? authed((t) => call<LineRow>('update_line', { p_id: Math.trunc(id), p_patch: patch }, t))
+      : one(await authed((t) => request<LineRow[]>(`/rest/v1/cheesy_lines?id=eq.${Math.trunc(id)}`, { method: 'PATCH', body: patch, token: t, prefer: 'return=representation' })), 'Line'),
 
   /** 'super_admin', 'staff', or null if not on the staff list. */
-  myRole: () => authed((t) => rpc<'super_admin' | 'staff' | null>('my_role', {}, t)),
-  listStaff: () => authed((t) => rpc<StaffRow[]>('list_staff', {}, t)),
-  /** Add a user, change a password or remove a user (super admin; supabase/functions/staff-admin). */
+  myRole: () => authed((t) => fn<'super_admin' | 'staff' | null>('my_role', {}, t)),
+  listStaff: () => authed((t) => fn<StaffRow[]>('list_staff', {}, t)),
+  /** Google Sheets only (super admin). */
+  sheetStatus: () => authed((t) => call<SheetStatus>('sheet_status', {}, t)),
+  /** Add a user, change a password or remove a user (super admin; supabase/functions/staff-admin, or the sheet's script). */
   staffAdmin: async (action: StaffAction, username: string, password?: string): Promise<void> => {
+    const body = { action, username, ...(password === undefined ? {} : { password }) };
+    if (onSheets()) {
+      await authed((t) => call('staff_admin', body, t));
+      return;
+    }
     try {
-      await authed((t) => request('/functions/v1/staff-admin', { body: { action, username, ...(password === undefined ? {} : { password }) }, token: t, timeoutMs: 20_000 }));
+      await authed((t) => request('/functions/v1/staff-admin', { body, token: t, timeoutMs: 20_000 }));
     } catch (e) {
       // 404 from Supabase itself (not a missing SQL function, which is kind 'setup' already).
       if (e instanceof CloudError && e.status === 404 && e.kind !== 'setup') {
