@@ -1,0 +1,44 @@
+# Keep the free Supabase project awake (owner request, 11 Oct 2026).
+# Supabase pauses a free project after 7 days with no activity. Every 6 days this job calls
+# public.keep_alive() (supabase/schema.sql): it saves one random 6-digit number in the
+# "dummy" table and deletes it again at once, so nothing is stored.
+# It is separate from the app: it doesn't build or publish anything, and the app never
+# uses the dummy table. Run it by hand: Actions → Keep Supabase awake → Run workflow.
+name: Keep Supabase awake
+
+on:
+  schedule:
+    # 03:30 UTC = 09:00 India time on the 1st, 7th, 13th, 19th, 25th and 31st:
+    # never more than 6 days apart.
+    - cron: '30 3 */6 * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: cloud.config.json
+          sparse-checkout-cone-mode: false
+      - name: Save one dummy number in Supabase and delete it
+        run: |
+          URL=$(jq -r '.supabaseUrl' cloud.config.json)
+          KEY=$(jq -r '.supabaseAnonKey' cloud.config.json) # the public key the app already ships with
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then echo "No Supabase in cloud.config.json: nothing to keep awake."; exit 0; fi
+          for try in 1 2 3; do
+            RES=$(curl -sS -m 60 -X POST "$URL/rest/v1/rpc/keep_alive" \
+              -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}' || true)
+            echo "Try $try: $RES"
+            if echo "$RES" | jq -e '.deleted == true and .rowsLeft == 0 and (.saved | tostring | test("^[1-9][0-9]{5}$"))' > /dev/null 2>&1; then
+              echo "Supabase is awake: saved $(echo "$RES" | jq -r .saved) and deleted it."
+              exit 0
+            fi
+            sleep 90 # a paused or busy project can take a moment
+          done
+          echo "Supabase did not answer as expected. If it is paused, open the Supabase dashboard and click Resume project."
+          exit 1

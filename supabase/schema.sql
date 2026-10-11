@@ -838,3 +838,32 @@ begin
     raise notice 'pg_cron is not available here: the app clears old months itself.';
   end if;
 end $$;
+
+-- ---------- Keep the free project awake (owner request, 11 Oct 2026) -------------------
+-- Supabase pauses a free project after 7 days with no activity (e.g. the shop is closed).
+-- Every 6 days a scheduled job OUTSIDE the app (.github/workflows/keep-supabase-awake.yml)
+-- calls keep_alive(): it saves one random 6-digit number in public.dummy and deletes it
+-- again straight away, so the table stays empty and uses no storage. The app never uses
+-- this table or function, and they can't touch the shop's data.
+create table if not exists public.dummy (
+  id bigint generated always as identity primary key,
+  dummy_data integer not null check (dummy_data between 100000 and 999999),
+  created_at timestamptz not null default now()
+);
+alter table public.dummy enable row level security; -- no policies: nobody reads or writes it directly
+revoke all on public.dummy from anon, authenticated;
+
+create or replace function public.keep_alive() returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_number integer := 100000 + floor(random() * 900000)::integer; -- 100000 … 999999
+  v_id bigint;
+  v_left bigint;
+begin
+  insert into public.dummy (dummy_data) values (v_number) returning id into v_id;
+  delete from public.dummy where id = v_id;
+  select count(*) into v_left from public.dummy;
+  return jsonb_build_object('saved', v_number, 'deleted', true, 'rowsLeft', v_left, 'at', now());
+end $$;
+revoke all on function public.keep_alive() from public, anon, authenticated;
+grant execute on function public.keep_alive() to anon; -- the scheduled job uses only the public key

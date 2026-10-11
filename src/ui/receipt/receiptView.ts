@@ -3,6 +3,7 @@ import { openModal } from '../components/modal';
 import { segmented } from '../components/form';
 import { icon } from '../components/icons';
 import { downloadBlob } from '../download';
+import { toast } from '../components/toast';
 import { buildReceipt } from './receipt';
 import { receiptPdfFile } from './receiptPdf';
 import { getSettings } from '../../db/settingsRepo';
@@ -42,8 +43,10 @@ function canShareFile(file: File): boolean {
  * "Save as PDF") and Share PDF: a phone-size PDF handed to the share menu, where
  * WhatsApp is picked, or downloaded where there is no share menu. Reprints use
  * the stored bill, so the same cheesy line and prices appear every time.
+ * The bill is already saved when this opens (justSaved says so on screen); once the
+ * PDF is shared or downloaded the window closes by itself, ready for the next bill.
  */
-export async function showReceipt(bill: Bill, opts: { autoPrint?: boolean } = {}): Promise<void> {
+export async function showReceipt(bill: Bill, opts: { autoPrint?: boolean; justSaved?: boolean } = {}): Promise<void> {
   const s = await getSettings();
   let width: ReceiptWidth = s.receiptWidth;
 
@@ -70,7 +73,11 @@ export async function showReceipt(bill: Bill, opts: { autoPrint?: boolean } = {}
       : 'Share PDF downloads this receipt as a phone-size PDF to attach in WhatsApp.',
   });
 
+  const savedText = bill.sync
+    ? `✓ Saved on this phone as ${bill.billNo}. It uploads by itself when the internet is back.`
+    : `✓ Saved as ${bill.billNo}. Nothing more to save: share, print, or tap Done for the next bill.`;
   const body = h('div', { class: 'receipt-modal' },
+    opts.justSaved ? h('p', { class: 'field-hint receipt-saved', attrs: { role: 'status' }, text: savedText }) : null,
     h('div', { class: 'receipt-toolbar' }, h('span', { class: 'field-label', text: 'Paper' }), format.el),
     preview,
     note,
@@ -98,9 +105,12 @@ export async function showReceipt(bill: Bill, opts: { autoPrint?: boolean } = {}
       const file = pdf ?? (await makePdf());
       if (canShareFile(file)) {
         await navigator.share({ files: [file], title: `Receipt ${bill.billNo}` });
+        m.close();
+        toast(`${bill.billNo} is saved and shared`, 'success');
       } else {
         downloadBlob(file, file.name);
-        note.textContent = `Saved ${file.name}. Attach it in WhatsApp.`;
+        m.close();
+        toast(`${bill.billNo} is saved. ${file.name} is in Downloads: attach it in WhatsApp.`, 'success', 6000);
       }
     } catch (err) {
       const name = err instanceof DOMException ? err.name : '';

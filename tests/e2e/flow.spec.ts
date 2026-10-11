@@ -108,7 +108,8 @@ test('add dishes → bill → print preview → appears in reports → void', as
   expect(pdf.text).toContain('/MediaBox [0 0 360 780]');
   expect(pdf.text).toContain('/Count 1');
   expect(pdf.text.endsWith('%%EOF\n')).toBe(true);
-  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(dialog).toHaveCount(0); // shared: the window closes by itself
+  await expect(page.locator('.toast').last()).toContainText(`${billNo} is saved and shared`);
 
   // 4. Reports
   await page.getByRole('link', { name: 'Reports' }).click();
@@ -216,9 +217,10 @@ test('after Save → Share PDF → Done no dish still looks selected (Clear too)
   await expect(dialog.locator('.r-tagline')).toHaveText('Taste the Flame');
   const head = await dialog.locator('.r-head').evaluate((el) => [...el.children].slice(0, 3).map((c) => c.className));
   expect(head).toEqual(['r-logo', 'r-tagline', 'r-name']); // just below the logo
+  await expect(dialog.getByText(/^✓ Saved as RCPT-\d{6}-\d{4}\. Nothing more to save/)).toBeVisible(); // in the database already
   await dialog.getByRole('button', { name: 'Share PDF' }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as Shared).__shared.length)).toBe(1);
-  await dialog.getByRole('button', { name: 'Done' }).click();
+  await expect(dialog).toHaveCount(0); // no need to tap Done
 
   // The bill was saved and cleared: no card keeps its highlight or count.
   await expect(selected).toHaveCount(0);
@@ -266,5 +268,6 @@ test('Share PDF downloads the receipt where there is no share menu; long bills g
   const pages = Number(/\/Count (\d+)/.exec(pdf)![1]);
   expect(pages).toBeGreaterThan(1); // 40 dishes don't fit on one phone screen
   expect(pdf.match(/\/MediaBox \[0 0 360 780\]/g)).toHaveLength(pages); // every page is phone-sized
-  await expect(dialog.getByRole('status')).toContainText('Attach it in WhatsApp');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.toast').last()).toContainText('attach it in WhatsApp');
 });

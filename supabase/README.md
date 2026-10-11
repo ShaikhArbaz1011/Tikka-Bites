@@ -124,3 +124,11 @@ Or send the two values to Claude, who can do this step for you.
       PGUSER=postgres PGHOST=localhost bash supabase/tests/run.sh
 
 - `npm run e2e:cloud` runs the real app against the real schema through `scripts/fake-supabase.mjs`, which needs the same PostgreSQL. It covers two phones, offline bills, fingerprint unlock, voids, the 3-month clean-up, and the super admin adding, changing and removing users (through the real `staff-admin` code).
+
+## Keeping the free project awake
+
+Supabase pauses a free project after **7 days** with no activity (for example, if the shop is closed for a week). To stop that, the GitHub job `.github/workflows/keep-supabase-awake.yml` runs every 6 days (the 1st, 7th, 13th, 19th, 25th and 31st, 09:00 India time). It calls `public.keep_alive()`, which saves one random 6-digit number in the `dummy` table (column `dummy_data`) and deletes it again straight away. The table stays empty, and the app never uses it.
+
+- To run it by hand: GitHub → **Actions → Keep Supabase awake → Run workflow**.
+- GitHub turns off scheduled jobs in a repository with no changes for 60 days. If that happens, open the Actions tab and click **Enable workflow**.
+- If the project is paused anyway: Supabase dashboard → the project → **Resume project**. No data is lost.
