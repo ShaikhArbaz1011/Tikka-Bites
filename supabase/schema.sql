@@ -867,3 +867,78 @@ begin
 end $$;
 revoke all on function public.keep_alive() from public, anon, authenticated;
 grant execute on function public.keep_alive() to anon; -- the scheduled job uses only the public key
+
+-- ---------- Nightly copy into a Google Sheet (owner request, 12 Oct 2026) ------------
+-- A Google script in the owner's own Google account (google-sheets/Code.gs, "Supabase
+-- backup") calls backup_pull() every night and copies every change into the sheet
+-- "Tikka Bites – Supabase backup", which keeps every month (Supabase keeps only 3).
+-- It only reads. It is locked by a long random backup key that lives only in that
+-- script; this database keeps just its SHA-256 hash, set once in the SQL Editor:
+--   select public.set_backup_key('<the 64-character code the Google script shows>');
+create table if not exists public.backup_access (
+  id smallint primary key default 1 check (id = 1),
+  key_hash text not null check (key_hash ~ '^[0-9a-f]{64}$'),
+  set_at timestamptz not null default now()
+);
+alter table public.backup_access enable row level security; -- no policies: nobody reads it directly
+revoke all on public.backup_access from anon, authenticated;
+
+create or replace function public.set_backup_key(p_hash text) returns text
+language plpgsql security definer set search_path = public as $$
+begin
+  if coalesce(p_hash, '') !~ '^[0-9a-f]{64}$' then
+    raise exception 'set_backup_key needs the 64-character code shown by the Google script' using errcode = 'P0001';
+  end if;
+  insert into public.backup_access (id, key_hash) values (1, p_hash)
+    on conflict (id) do update set key_hash = excluded.key_hash, set_at = now();
+  return 'Backup key saved. The Google script can now copy the data.';
+end $$;
+
+-- Like pull_changes, for the backup: bills come with who saved them, rows with their rev.
+-- STABLE (read only, one snapshot). When the last page is reached it also counts the bills
+-- of every month, so the script can check its copy is complete.
+create or replace function public.backup_pull(p_key text, p_since bigint, p_limit integer default 500) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_clock public.sync_clock%rowtype;
+  v_limit integer := least(greatest(coalesce(p_limit, 500), 1), 1000);
+  v_since bigint := greatest(coalesce(p_since, 0), 0);
+  v_out jsonb;
+  v_count integer;
+  v_last bigint;
+begin
+  if coalesce(length(p_key), 0) < 32 or not exists (
+    select 1 from public.backup_access where key_hash = encode(sha256(convert_to(p_key, 'UTF8')), 'hex')
+  ) then
+    raise exception 'Wrong backup key.' using errcode = '42501';
+  end if;
+  select * into v_clock from public.sync_clock where id = 1;
+  with changes as (
+    (select m.rev, 'menu' as kind, to_jsonb(m) as row from public.menu m where m.rev > v_since order by m.rev limit v_limit)
+    union all
+    (select l.rev, 'lines', to_jsonb(l) from public.cheesy_lines l where l.rev > v_since order by l.rev limit v_limit)
+    union all
+    (select s.rev, 'settings', jsonb_build_object('data', s.data, 'rev', s.rev) from public.settings s where s.rev > v_since)
+    union all
+    (select b.rev, 'bills', jsonb_build_object('no', b.bill_no, 'bill', b.data, 'by', st.username, 'ref', b.client_ref, 'rev', b.rev)
+       from public.bills b left join public.staff st on st.user_id = b.created_by
+      where b.rev > v_since order by b.rev limit v_limit)
+  ), page as (
+    select * from changes order by rev limit v_limit
+  )
+  select count(*), max(rev), jsonb_build_object(
+      'menu', coalesce(jsonb_agg(row order by rev) filter (where kind = 'menu'), '[]'),
+      'lines', coalesce(jsonb_agg(row order by rev) filter (where kind = 'lines'), '[]'),
+      'settings', (array_agg(row) filter (where kind = 'settings'))[1],
+      'bills', coalesce(jsonb_agg(row order by rev) filter (where kind = 'bills'), '[]'))
+    into v_count, v_last, v_out
+    from page;
+  return v_out || jsonb_build_object(
+    'dbId', v_clock.db_id,
+    'more', v_count = v_limit,
+    'rev', case when v_count = v_limit then v_last else greatest(v_clock.rev, v_since) end,
+    'counts', case when v_count = v_limit then null else
+      (select coalesce(jsonb_object_agg(month_key, n), '{}') from (select month_key, count(*) as n from public.bills group by month_key) c) end);
+end $$;
+revoke all on function public.set_backup_key(text), public.backup_pull(text, bigint, integer) from public, anon, authenticated;
+grant execute on function public.backup_pull(text, bigint, integer) to anon; -- the Google script has only the public key (plus the backup key)

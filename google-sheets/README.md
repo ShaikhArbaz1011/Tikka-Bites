@@ -11,6 +11,8 @@ The data lives in three files, all inside one Drive folder called **Tikka Bites 
 | **Tikka Bites – Backup** | Every change is copied here straight after Main, in the same request. **Old months stay here for good.** |
 | Nightly copies (folder) | A dated copy of Main, made every night at about 00:05 India time. The newest 14 are kept. |
 
+> **Using Supabase?** The same script can instead keep a **nightly backup of Supabase** in Google Sheets. It doesn't change the app. See [Nightly backup of Supabase](#nightly-backup-of-supabase-while-the-app-uses-supabase) at the end of this page.
+
 ## Why the sheets don't get corrupted
 
 - **One request at a time.** The script holds a lock, so two phones never write at the same moment, and nobody ever reads half a change.
@@ -87,3 +89,42 @@ If you make a **New deployment** instead, it gets a new address, and `sheetsUrl`
   - switching to the Backup
 - **App tests:** `tests/unit/sheetsClient.test.ts` runs the app's own code against the same script.
 - **End to end:** `npm run e2e:sheets` runs the real app in a browser against `scripts/fake-sheets.mjs`.
+
+## Nightly backup of Supabase (while the app uses Supabase)
+
+The app keeps using Supabase as before; nothing changes on the phones. Every night, at about **3 am India time**, the script copies everything from Supabase into one Google Sheet, **Tikka Bites – Supabase backup**, in the **Tikka Bites data** folder:
+
+- The tabs are the same as in the Backup above: a tab for each month ("Bills 2026-10"), plus Menu, Cheesy lines, Settings and Counters.
+- **Every month stays here for good.** Supabase and the phones keep only the last 3 months, so this sheet is the only place older bills are kept, apart from Excel exports.
+- **It only reads Supabase.** It asks `public.backup_pull()` (in `supabase/schema.sql`) for what changed since the last copy. That function can't change anything.
+  - It needs a long random **backup key**, which only this script knows.
+  - Supabase keeps just the key's SHA-256 fingerprint, so even the public key in the app can't read the data with it.
+- **The same rules as the sheets above:**
+  - Everything is checked before anything is written.
+  - Each bill has one row, found by its receipt number.
+  - Hand edits are caught.
+  - If a copy stops halfway, the next run simply does it again, and nothing is doubled.
+- **It checks itself.** After each copy it compares the number of bills of every month with Supabase. If some are missing (for example, rows deleted by hand), it copies everything again.
+- **The Status tab** of the Control sheet says when the last copy ran and what it found. If a copy fails, Google emails the account owner.
+- **No web app deployment is needed.** It only needs the **Allow** permission once.
+
+### Set up (one time, about 10 minutes)
+
+1. Sign in to the shop's Google account, open [sheets.new](https://sheets.new) and name the sheet **Tikka Bites – Control**.
+2. Open **Extensions → Apps Script**.
+   - Delete what is there and paste the whole of [`Code.gs`](Code.gs).
+   - In **Project Settings** (the gear icon), set the time zone to **(GMT+05:30) India Standard Time**.
+   - Save.
+3. Reload the Control sheet. Choose **Tikka Bites → Supabase backup: set up**.
+   - Google asks for permission. Click **Allow**; on the "Google hasn't verified this app" screen, choose **Advanced → Go to … (unsafe)**. The script is your own, so this is expected.
+   - Paste the Supabase **project address** and the **anon / publishable key**. Both are in `cloud.config.json` and in Supabase → Project Settings → API. **Never paste the secret / service_role key**: the script refuses it.
+4. The script shows one line, `select public.set_backup_key('…');`. The same line is also on the Status tab.
+   - Paste it into **Supabase → SQL Editor** and click **Run**.
+   - If `backup_pull` doesn't exist yet, run `supabase/schema.sql` first. It is safe to run again.
+5. Choose **Tikka Bites → Supabase backup: copy now**. The message should end with "Checked: all … bills Supabase has are in the sheet."
+
+From then on it runs by itself every night. Running **set up** again keeps the same key and the same file.
+
+If the Supabase database is ever re-created, or you point it at another project, the script notices the new database and starts a new file, "… (from <date>)". The old file is kept as it is.
+
+Tested by `tests/unit/supabaseBackup.test.ts` (including a run against the real SQL in a local PostgreSQL) and `supabase/tests/i_backup.sql`.

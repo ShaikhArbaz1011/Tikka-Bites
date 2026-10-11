@@ -12,7 +12,7 @@
 //  - every call of a script function runs in a fresh JavaScript context, like each
 //    Apps Script execution, sharing only the sheets, Drive, cache and properties.
 import vm from 'node:vm';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 const CODE = new vm.Script(readFileSync(new URL('../../google-sheets/Code.gs', import.meta.url), 'utf8'), { filename: 'Code.gs' });
@@ -41,6 +41,8 @@ export function createRuntime(opts = {}) {
     ui: null,
     activeId: null,
     logs: [],
+    fetch: null, // UrlFetchApp: (url, opts) => { code, body } (throw = no connection)
+    fetches: [],
   };
   const now = () => (rt.clock ?? Date.now());
 
@@ -450,6 +452,9 @@ export function createRuntime(opts = {}) {
   const PropertiesService = { getScriptProperties: () => scriptProps };
 
   const Utilities = {
+    DigestAlgorithm: { SHA_256: 'sha256' },
+    Charset: { UTF_8: 'utf8' },
+    computeDigest: (alg, value) => toSigned(createHash(alg).update(toBuf(value)).digest()),
     getUuid: () => randomUUID(),
     computeHmacSha256Signature: (value, key) => toSigned(createHmac('sha256', toBuf(key)).update(toBuf(value)).digest()),
     base64Encode: (d) => toBuf(d).toString('base64'),
@@ -477,6 +482,7 @@ export function createRuntime(opts = {}) {
         atHour: (h) => ((t.hour = h), b),
         nearMinute: (m) => ((t.minute = m), b),
         inTimezone: (z) => ((t.tz = z), b),
+        after: (ms) => ((t.after = ms), b),
         create: () => (rt.triggers.push(t), t),
       };
       return b;
@@ -484,6 +490,16 @@ export function createRuntime(opts = {}) {
     getProjectTriggers: () => [...rt.triggers],
     deleteTrigger: (t) => {
       rt.triggers = rt.triggers.filter((x) => x !== t);
+    },
+  };
+
+  const UrlFetchApp = {
+    fetch: (url, opts = {}) => {
+      if (!rt.fetch) throw new Error('Address unavailable: ' + url);
+      rt.fetches.push({ url, opts });
+      const res = rt.fetch(url, opts);
+      if (!opts.muteHttpExceptions && res.code >= 400) throw new Error('Request failed for ' + url + ' returned code ' + res.code);
+      return { getResponseCode: () => res.code, getContentText: () => res.body };
     },
   };
 
@@ -506,7 +522,7 @@ export function createRuntime(opts = {}) {
 
   /** Run one script function as its own execution (fresh globals, like Apps Script). */
   function exec(fn, ...args) {
-    const ctx = vm.createContext({ SpreadsheetApp, DriveApp, LockService, CacheService, PropertiesService, Utilities, ContentService, ScriptApp, console: quiet, Date: FakeDate });
+    const ctx = vm.createContext({ SpreadsheetApp, DriveApp, LockService, CacheService, PropertiesService, Utilities, ContentService, ScriptApp, UrlFetchApp, console: quiet, Date: FakeDate });
     CODE.runInContext(ctx);
     try {
       return ctx[fn](...args);
@@ -543,7 +559,7 @@ export function createRuntime(opts = {}) {
         ButtonSet: { OK: 'OK', OK_CANCEL: 'OK_CANCEL', YES_NO: 'YES_NO' },
         Button: { OK: 'OK', CANCEL: 'CANCEL', YES: 'YES', NO: 'NO' },
         createMenu: () => {
-          const m = { addItem: () => m, addSeparator: () => m, addToUi: () => undefined };
+          const m = { addItem: () => m, addSeparator: () => m, addSubMenu: () => m, addToUi: () => undefined };
           return m;
         },
         prompt: () => {

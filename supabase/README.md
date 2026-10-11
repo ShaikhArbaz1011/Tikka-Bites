@@ -132,3 +132,9 @@ Supabase pauses a free project after **7 days** with no activity (for example, i
 - To run it by hand: GitHub → **Actions → Keep Supabase awake → Run workflow**.
 - GitHub turns off scheduled jobs in a repository with no changes for 60 days. If that happens, open the Actions tab and click **Enable workflow**.
 - If the project is paused anyway: Supabase dashboard → the project → **Resume project**. No data is lost.
+
+## Nightly backup into Google Sheets
+
+Supabase keeps only the last 3 months, and the free plan has no backups you can restore yourself. A Google script in the shop's own Google account copies everything into a Google Sheet every night, where every month is kept for good. It reads through `public.backup_pull()`, which is read-only and locked by a backup key; only the key's SHA-256 hash is stored here (`public.backup_access`).
+
+Set-up steps: [`google-sheets/README.md` → Nightly backup of Supabase](../google-sheets/README.md#nightly-backup-of-supabase-while-the-app-uses-supabase).

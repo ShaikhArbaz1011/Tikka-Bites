@@ -36,7 +36,7 @@ export interface Runtime {
   files: Map<string, FakeSpreadsheet | { kind: 'folder'; id: string; name: string; parents: string[] }>;
   props: Map<string, string>;
   cache: Map<string, { v: string; until: number }>;
-  triggers: { fn: string; hour?: number; minute?: number; tz?: string }[];
+  triggers: { fn: string; hour?: number; minute?: number; tz?: string; after?: number }[];
   lockHeld: boolean;
   lockBusy: boolean;
   dirty: boolean;
@@ -48,6 +48,9 @@ export interface Runtime {
   violations: string[];
   evictCache: boolean;
   logs: string[];
+  /** UrlFetchApp answers: return { code, body }, or throw for "no connection". */
+  fetch: ((url: string, opts: { method?: string; headers?: Record<string, string>; payload?: string; muteHttpExceptions?: boolean }) => { code: number; body: string }) | null;
+  fetches: { url: string; opts: { headers?: Record<string, string>; payload?: string } }[];
 }
 
 export interface Reply<T = any> {

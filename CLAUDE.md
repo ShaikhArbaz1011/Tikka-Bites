@@ -36,6 +36,10 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 - Never ship or commit the Supabase `service_role` / secret key. `resolveCloudConfig` refuses it.
 - Google Sheets: the sign-in secret (`TOKEN_SECRET`) lives only in the script's Script Properties. Never put it in the app or the repo.
 - Keep-awake (owner request, 11 Oct 2026): `.github/workflows/keep-supabase-awake.yml` calls `public.keep_alive()` every 6 days. It saves one random 6-digit number in `public.dummy.dummy_data` and deletes it. The app must never use the `dummy` table or that function.
+- Nightly Supabase backup (owner request, 12 Oct 2026): `Code.gs` → "Supabase backup" copies Supabase into the Google Sheet "Tikka Bites – Supabase backup" every night. That sheet keeps every month.
+  - It reads only through `public.backup_pull()`, which is STABLE (read-only) and granted to anon, but only answers to the backup key.
+  - Supabase stores just the key's SHA-256 (`backup_access`, set with `set_backup_key` in the SQL Editor). The key lives only in the script's Script Properties: never in the app or the repo.
+  - The app never uses `backup_pull`. Tests: `tests/unit/supabaseBackup.test.ts` and `supabase/tests/i_backup.sql`.
 - Supabase blocks any DELETE or UPDATE without a WHERE clause on app requests (safeupdate). Write `where true` for a full-table delete; `tests/unit/schema.test.ts` checks this.
 - Stack: Vite + vanilla TypeScript (strict). No React or any other UI framework.
 - All data is stored in IndexedDB through `idb`.
