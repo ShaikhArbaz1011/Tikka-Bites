@@ -125,6 +125,11 @@ The app keeps using Supabase as before; nothing changes on the phones. Every nig
 
 From then on it runs by itself every night. Running **set up** again keeps the same key and the same file.
 
+**If the Tikka Bites menu doesn't appear, or Extensions → Apps Script says "Page not found":** Chrome is signed in to several Google accounts and the shop's isn't the first one. Google has a known bug with this.
+- Fix: open the sheet in a window signed in only to the shop's account (for example a separate Chrome profile).
+- The nightly copy isn't affected: it runs on Google's side, not in the browser.
+- The live set-up on 12 Oct 2026 worked around it from the script editor: Project editor → a temporary file → Run.
+
 If the Supabase database is ever re-created, or you point it at another project, the script notices the new database and starts a new file, "… (from <date>)". The old file is kept as it is.
 
 Tested by `tests/unit/supabaseBackup.test.ts` (including a run against the real SQL in a local PostgreSQL) and `supabase/tests/i_backup.sql`.
