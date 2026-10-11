@@ -1,5 +1,5 @@
 \set ON_ERROR_STOP on
-\echo '15. keep_alive(): one random 6-digit number saved and deleted, nothing left; separate from the app'
+\echo '18. keep_alive(): one random 6-digit number saved and deleted, nothing left; separate from the app'
 set role anon;
 do $$
 declare r1 jsonb; r2 jsonb;
