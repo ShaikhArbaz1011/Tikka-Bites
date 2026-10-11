@@ -96,6 +96,16 @@ export function createRuntime(opts = {}) {
     getName() {
       return this.name;
     }
+    setName(n) {
+      write(this.ss);
+      if (this.ss.sheets.some((s) => s !== this && s.name === n)) throw new Error(`A sheet with the name "${n}" already exists. Please enter another name.`);
+      this.name = n;
+      return this;
+    }
+    /** 1-based position, like Apps Script. */
+    getIndex() {
+      return this.ss.sheets.indexOf(this) + 1;
+    }
     getMaxRows() {
       return this.rows;
     }

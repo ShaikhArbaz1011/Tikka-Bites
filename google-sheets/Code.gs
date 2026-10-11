@@ -175,15 +175,41 @@ function rupees(p) {
   return typeof p === 'number' && isFinite(p) ? p / 100 : '';
 }
 
+/** "₹150" or "₹120.50", for reading only. */
+function rupeeText(p) {
+  if (typeof p !== 'number' || !isFinite(p)) return '';
+  return '₹' + (p % 100 === 0 ? String(p / 100) : (p / 100).toFixed(2));
+}
+
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const ORDER_TYPES = { 'dine-in': 'Dine-in', takeaway: 'Takeaway', delivery: 'Delivery' };
+const PAYMENTS = { cash: 'Cash', upi: 'UPI', card: 'Card' };
+
+function discountText(d) {
+  if (!isObj(d)) return '';
+  if (d.kind === 'pct') return Number(d.bp) / 100 + '%';
+  return Number(d.paise) > 0 ? rupeeText(Number(d.paise)) + ' off' : 'None';
+}
+
+/** Every field of the bill, one column each (owner request, 12 Oct 2026: the whole bill on one row). */
 function billCells(r) {
   const b = r.bill;
-  const items = (b.items || []).map((i) => i.qty + '× ' + i.name).join(', ');
+  const at = typeof b.createdAt === 'number' ? b.createdAt : NaN;
+  const items = (b.items || []).map((i) => i.qty + ' × ' + i.name + ' @ ' + rupeeText(i.unitPaise) + ' = ' + rupeeText(i.linePaise)).join('; ');
   return [
-    b.billNo, dayText(b.createdAt), timeText(b.createdAt), b.orderType, b.tableNo || '', b.customerName || '', b.paymentMode,
-    items, b.itemCount, rupees(b.subtotalPaise), rupees(b.discountPaise), rupees(b.roundOffPaise), rupees(b.totalPaise),
-    b.status === 'void' ? 'Void' : 'Paid', b.voidReason || '', r.by || '', b.printedAs || '',
+    b.billNo, dayText(at), timeText(at), isFinite(at) ? DAYS[ist(at).dow] : '',
+    ORDER_TYPES[b.orderType] || b.orderType || '', b.tableNo || '', b.customerName || '', PAYMENTS[b.paymentMode] || b.paymentMode || '',
+    items, b.itemCount, (b.categories || []).join(', '), b.hasVeg && b.hasNonVeg ? 'Veg + Non-veg' : b.hasVeg ? 'Veg' : b.hasNonVeg ? 'Non-veg' : '',
+    rupees(b.subtotalPaise), discountText(b.discount), rupees(b.discountPaise), rupees(b.roundOffPaise), rupees(b.totalPaise),
+    b.status === 'void' ? 'Void' : 'Paid', b.voidReason || '', typeof b.voidedAt === 'number' ? dayText(b.voidedAt) + ' ' + timeText(b.voidedAt) : '',
+    r.by || '', b.printedAs || '', b.cheesyLine || '',
   ];
 }
+
+/** Earlier bill-tab headers (oldest first). Tabs with one of these are rebuilt from their Data column (upgradeTab). */
+const OLD_BILL_HEADS = [
+  ['Receipt no', 'Date', 'Time', 'Order type', 'Table', 'Customer', 'Payment', 'Items', 'Item count', 'Subtotal ₹', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Saved by', 'Printed as', 'Rev', 'Client ref', 'Data', 'Data 2'],
+];
 
 const SPECS = {
   meta: {
@@ -220,9 +246,12 @@ const SPECS = {
   },
   bills: {
     tab: null, // one tab per month: "Bills 2026-10"
-    head: ['Receipt no', 'Date', 'Time', 'Order type', 'Table', 'Customer', 'Payment', 'Items', 'Item count', 'Subtotal ₹', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Saved by', 'Printed as'],
-    fmt: ['@', '@', '@', '@', '@', '@', '@', '@', '0', '0.00', '0.00', '0.00', '0.00', '@', '@', '@', '@'],
-    rev: true, extra: ['Client ref'], cells: 2,
+    head: [
+      'Receipt no', 'Date', 'Time', 'Day', 'Order type', 'Table', 'Customer', 'Payment', 'Items (qty × rate = amount)', 'Item count', 'Categories', 'Veg / Non-veg',
+      'Subtotal ₹', 'Discount', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Voided at', 'Saved by', 'Printed as', 'Receipt line',
+    ],
+    fmt: ['@', '@', '@', '@', '@', '@', '@', '@', '@', '0', '@', '@', '0.00', '@', '0.00', '0.00', '0.00', '@', '@', '@', '@', '@', '@'],
+    rev: true, extra: ['Client ref'], cells: 2, old: OLD_BILL_HEADS,
     key: (r) => r.bill.billNo,
     show: billCells,
     extraOf: (r) => [r.ref || ''],
@@ -356,24 +385,69 @@ function colName(n) {
   return s;
 }
 
-/** Refuse to touch a tab whose columns were moved, added in between or deleted by hand. */
-function checkLayout(sh, spec, file, writable) {
+/**
+ * Refuse to touch a tab whose columns were moved, added in between or deleted by hand.
+ * A tab in an earlier layout of this script (spec.old) is rebuilt in the current one.
+ * Returns the tab to use (a rebuilt tab is a new sheet object).
+ */
+function checkLayout(sh, spec, file, writable, ss) {
   const L = layout(spec);
-  let got;
-  try {
-    got = sh.getRange(1, 1, 1, L.width).getValues()[0];
-  } catch (e) {
-    throw changedByHand(file, sh.getName(), 'a column was deleted');
-  }
+  const got = sh.getRange(1, 1, 1, sh.getMaxColumns()).getValues()[0];
   if (got.every((v) => v === '' || v === null) && sh.getLastRow() <= 1 && writable) {
     formatTab(sh, spec); // a tab whose creation was interrupted: finish it
-    return;
+    return sh;
   }
+  const old = (spec.old || []).find((h) => h.every((x, i) => String(got[i]) === x) && got.slice(h.length).every((v) => v === '' || v === null));
+  if (old) {
+    if (!writable || !ss) throw new TbError('server', 'The ' + file + ' Google Sheet tab "' + sh.getName() + '" still has the older column layout. It is upgraded by itself on the next change or copy.');
+    return upgradeTab(ss, sh, spec, old);
+  }
+  if (got.length < L.width) throw changedByHand(file, sh.getName(), 'a column was deleted');
   for (let i = 0; i < L.width; i++) {
     if (String(got[i]) !== L.head[i]) {
       throw changedByHand(file, sh.getName(), 'column ' + colName(i + 1) + ' should be "' + L.head[i] + '" but is "' + String(got[i]).slice(0, 40) + '"');
     }
   }
+  return sh;
+}
+
+const UPGRADING = ' (upgrading)';
+
+/**
+ * Rebuild a tab in the current layout from its trusted Data column. The new rows go into
+ * "<name> (upgrading)" first; only when that tab is complete is the old one deleted and the
+ * new one renamed. A crash before that leaves the old tab as it was (finishUpgrades tidies up).
+ */
+function upgradeTab(ss, sh, spec, oldHead) {
+  const name = sh.getName();
+  const leftover = ss.getSheetByName(name + UPGRADING);
+  if (leftover) ss.deleteSheet(leftover); // an earlier attempt that did not finish
+  const revCol = oldHead.indexOf('Rev');
+  const dataCol = oldHead.indexOf('Data');
+  const last = sh.getLastRow();
+  const values = last >= 2 ? sh.getRange(2, 1, last - 1, oldHead.length).getValues() : [];
+  const rows = [];
+  values.forEach((v, i) => {
+    const rec = parseCells(v.slice(dataCol), 'tab "' + name + '" row ' + (i + 2));
+    if (rec) rows.push(buildRow(spec, rec, revCol >= 0 ? Number(v[revCol]) || 0 : 0, 'This record'));
+  });
+  const fresh = initTab(ss, name + UPGRADING, spec, sh.getIndex());
+  if (rows.length) appendRows(fresh, spec, rows);
+  SpreadsheetApp.flush();
+  ss.deleteSheet(sh);
+  fresh.setName(name);
+  return fresh;
+}
+
+/** After a crash in the middle of upgradeTab: keep the complete tab, drop the half-made one. */
+function finishUpgrades(ss) {
+  ss.getSheets().forEach((sh) => {
+    const n = sh.getName();
+    if (n.slice(-UPGRADING.length) !== UPGRADING) return;
+    const base = n.slice(0, -UPGRADING.length);
+    if (ss.getSheetByName(base)) ss.deleteSheet(sh); // the old tab is still there: start again from it
+    else sh.setName(base); // the old tab was already deleted, so this one is complete
+  });
 }
 
 /** Add rows below the last one (one call for the formats, one for the values). Returns the first row. */
@@ -432,7 +506,15 @@ class Db {
     this.log = []; // what was written, to copy to the Backup
   }
 
+  /** Once per request, before any tab is used: finish a layout upgrade a crash interrupted. */
+  tidy() {
+    if (this.tidied || !this.writable) return;
+    this.tidied = true;
+    finishUpgrades(this.ss);
+  }
+
   sheet(name, spec, create) {
+    this.tidy();
     let sh = this.ss.getSheetByName(name);
     if (!sh) {
       if (!create || !this.writable) return null;
@@ -441,7 +523,7 @@ class Db {
       return sh;
     }
     if (!this.checked[name]) {
-      checkLayout(sh, spec, this.label, this.writable);
+      sh = checkLayout(sh, spec, this.label, this.writable, this.ss);
       this.checked[name] = true;
     }
     return sh;
@@ -554,6 +636,7 @@ class Db {
 
   // ---------- bills: one tab per month ----------
   monthTabs() {
+    this.tidy();
     return this.ss.getSheets().map((sh) => ({ sh, name: sh.getName(), month: tabMonth(sh.getName()) })).filter((t) => t.month);
   }
 

@@ -11,7 +11,10 @@ import type { Bill, BillItem, CheesyLine, Dish, Settings } from '../db/types';
 import type { BagState } from './shuffleBag';
 
 
-export const BACKUP_APP = 'restobill';
+/** Written into every new backup file (owner request, 12 Oct 2026: the shop's name, not "restobill"). */
+export const BACKUP_APP = 'tikkabites';
+/** Backups made before 12 Oct 2026 say "restobill"; they still restore. */
+export const LEGACY_BACKUP_APPS: readonly string[] = ['restobill'];
 export const BACKUP_SCHEMA_VERSION = 1;
 export const MAX_BACKUP_BYTES = 50 * 1024 * 1024;
 const MAX_LOGO_CHARS = 700_000;
@@ -29,7 +32,7 @@ export function isLegacyDishPhoto(v: unknown): v is string {
 }
 
 export interface Backup {
-  app: typeof BACKUP_APP;
+  app: string;
   schemaVersion: number;
   exportedAt: number;
   settings: Settings;
@@ -219,7 +222,7 @@ export type ValidationResult = { ok: true; backup: Backup } | { ok: false; error
 export function validateBackup(data: unknown): ValidationResult {
   try {
     const o = obj(data, 'backup', ['app', 'schemaVersion', 'exportedAt', 'settings', 'menu', 'bills', 'cheesyLines', 'meta']);
-    if (o['app'] !== BACKUP_APP) fail('backup.app', 'this is not a RestoBill backup');
+    if (o['app'] !== BACKUP_APP && !LEGACY_BACKUP_APPS.includes(o['app'] as string)) fail('backup.app', 'this is not a Tikka Bites backup');
     if (o['schemaVersion'] !== BACKUP_SCHEMA_VERSION) fail('backup.schemaVersion', `unsupported version (expected ${BACKUP_SCHEMA_VERSION})`);
     int(o['exportedAt'], 'backup.exportedAt', 0, MAX_TIME);
     checkSettings(o['settings'], 'settings');

@@ -82,7 +82,7 @@ for (const tRaw of times) {
 }
 
 const backup = {
-  app: 'restobill', schemaVersion: 1, exportedAt: Date.now(),
+  app: 'tikkabites', schemaVersion: 1, exportedAt: Date.now(),
   settings: { name: 'Spice Garden', address: '14, MG Road, Pune', phone: '+91 98765 43210', currencySymbol: '₹', receiptWidth: '80', roundOff: true, lastBackupAt: Date.now() },
   menu,
   bills,

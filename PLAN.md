@@ -489,7 +489,7 @@ The receipt is rendered with DOM APIs into `#print-root`.
 - Cheesy lines editor.
 
 **Backup**
-- Downloads `restobill-backup-YYYY-MM-DD.json` with every store and a `schemaVersion`.
+- Downloads `TikkaBites-backup-YYYY-MM-DD.json` (`"app":"tikkabites"`; older `restobill` files still restore) with every store and a `schemaVersion`.
 - Sets `lastBackupAt`.
 
 **Restore**

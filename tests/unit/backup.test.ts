@@ -53,6 +53,13 @@ describe('backup round trip', () => {
     const next = await saveBill({ items: [{ menuId: (await listMenu())[0]!.id, qty: 1 }], orderType: 'takeaway', paymentMode: 'cash', discount: NO_DISCOUNT }, SEP);
     expect(next.billNo).toBe('RCPT-202609-0004');
   });
+
+  it('new backups say "tikkabites"; backups made before 12 Oct 2026 ("restobill") still restore', async () => {
+    await seed();
+    const json = await backupJson();
+    expect(json['app']).toBe('tikkabites');
+    expect(validateBackup({ ...json, app: 'restobill' }).ok).toBe(true);
+  });
 });
 
 describe('strict import validation', () => {
@@ -67,7 +74,7 @@ describe('strict import validation', () => {
     ['unknown top-level key', (j) => (j.hacker = 1), /unknown field "hacker"/],
     ['unknown key in a bill', (j) => (j.bills[0].extra = true), /unknown field "extra"/],
     ['missing field', (j) => delete j.settings.roundOff, /missing field "roundOff"/],
-    ['wrong app', (j) => (j.app = 'other'), /not a RestoBill backup/],
+    ['wrong app', (j) => (j.app = 'other'), /not a Tikka Bites backup/],
     ['future schema version', (j) => (j.schemaVersion = 99), /unsupported version/],
     ['fractional price', (j) => (j.menu[0].pricePaise = 120.5), /whole number/],
     ['negative price', (j) => (j.menu[0].pricePaise = -1), /between/],

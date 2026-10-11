@@ -11,7 +11,7 @@ import { purgeOldMonths } from '../../db/retention';
 export async function runBackup(): Promise<void> {
   const now = Date.now();
   const blob = await exportBackup(now);
-  downloadBlob(blob, `restobill-backup-${formatDateISO(now)}.json`);
+  downloadBlob(blob, `TikkaBites-backup-${formatDateISO(now)}.json`);
   await markBackedUp(now);
   document.dispatchEvent(new CustomEvent('backup-done'));
   toast('Backup downloaded — keep it somewhere safe', 'success');

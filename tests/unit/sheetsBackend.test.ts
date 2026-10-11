@@ -193,7 +193,11 @@ describe('bills: the same rules as the SQL server', () => {
     expect(menu.find((d) => d.id === 1).updated_at).toBe(2); // being billed is not an edit
     // The readable columns, for people
     const row = g.rows(g.main(), 'Bills 2026-09')[0]!;
-    expect(row.slice(0, 17)).toEqual([`RCPT-${M}-0001`, '25-09-2026', '13:00', 'dine-in', '4', 'Asha', 'upi', '2× Full Chicken, 1× Masala Fries', 3, 1020.5, 102.05, -0.45, 918, 'Paid', '', 'owner', '']);
+    expect(row.slice(0, 23)).toEqual([
+      `RCPT-${M}-0001`, '25-09-2026', '13:00', 'Friday', 'Dine-in', '4', 'Asha', 'UPI',
+      '2 × Full Chicken @ ₹450 = ₹900; 1 × Masala Fries @ ₹120.50 = ₹120.50', 3, 'Grill Gali, Aloo Ke Laloo', 'Veg + Non-veg',
+      1020.5, '10%', 102.05, -0.45, 918, 'Paid', '', '', 'owner', '', 'Totally worth it 😋',
+    ]);
   });
 
   it('a retry with the same clientRef gets the SAME bill; a new ref the next number', () => {
@@ -267,7 +271,7 @@ describe('bills: the same rules as the SQL server', () => {
     const v = ok(call('void_bill', { p_bill_no: b.billNo, p_reason: '  Wrong table\u0007 ' }));
     expect(v).toMatchObject({ status: 'void', voidReason: 'Wrong table', voidedAt: NOW });
     expect(billTab(g.main())[0]!.bill.status).toBe('void');
-    expect(g.rows(g.main(), 'Bills 2026-09')[0]![13]).toBe('Void');
+    expect(g.rows(g.main(), 'Bills 2026-09')[0]!.slice(17, 20)).toEqual(['Void', expect.any(String), expect.stringMatching(/^\d\d-\d\d-2026 \d\d:\d\d$/)]);
     refused(call('void_bill', { p_bill_no: b.billNo, p_reason: 'again' }), 'already voided');
     refused(call('void_bill', { p_bill_no: b.billNo, p_reason: 'no' }), 'at least 3 characters');
     refused(call('void_bill', { p_bill_no: 'RCPT-190001-0001', p_reason: 'nope' }), 'Bill not found');
@@ -603,7 +607,7 @@ describe('the sheets cannot get corrupted', () => {
   it('a renamed tab or a damaged Data cell is reported, never guessed', () => {
     ok(save(body([[1, 1, 45000]])));
     const bills = g.main().getSheetByName('Bills 2026-09')!;
-    bills.handEdit((sh) => sh.getRange(2, 20).setValues([['j:{"bill":{"billNo"']]));
+    bills.handEdit((sh) => sh.getRange(2, sh.dump()[0]!.indexOf('Data') + 1).setValues([['j:{"bill":{"billNo"']]));
     refused(call('pull_changes', { p_since: 0 }), 'damaged row (Main › Bills 2026-09 row 2)', 'server');
     const h = g.exec('healthCheck');
     expect(h.ok).toBe(false);
@@ -632,8 +636,8 @@ describe('the sheets cannot get corrupted', () => {
     expect(b.customerName).toBe('=HYPERLINK("http://x","y")');
     expect(b.tableNo).toBe('007');
     const row = g.rows(g.main(), 'Bills 2026-09')[0]!;
-    expect(row[4]).toBe('007');
-    expect(row[5]).toBe('\'=HYPERLINK("http://x","y")');
+    expect(row[5]).toBe('007');
+    expect(row[6]).toBe('\'=HYPERLINK("http://x","y")');
     ok(call('insert_dishes', { p_rows: [{ name: '+91 Special', category: '@home', price_paise: 100, is_veg: true }] }));
     expect(g.records(g.main(), 'Menu').at(-1)).toMatchObject({ name: '+91 Special', category: '@home' });
     expect(ok(call('pull_changes', { p_since: 0 })).bills[0].customerName).toBe('=HYPERLINK("http://x","y")');

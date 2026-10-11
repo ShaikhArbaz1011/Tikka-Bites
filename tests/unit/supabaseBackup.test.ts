@@ -229,7 +229,7 @@ describe('Supabase backup: copying', () => {
     expect(billsIn(file(), '202610').map((x) => x.by)).toEqual(['owner', 'counter1', 'owner', 'counter1', 'owner']);
     const row = g.rows(file(), 'Bills 2026-10')[0]!;
     expect(row.slice(0, 3)).toEqual(['RCPT-202610-0001', '05-10-2026', '13:31']);
-    expect(row[12]).toBe(450); // Total ₹
+    expect(row[16]).toBe(450); // Total ₹
     // It sent only the public key and the backup key, and asked from the start.
     const sent = g.rt.fetches[0]!;
     expect(sent.opts.headers).toEqual({ apikey: ANON, Authorization: 'Bearer ' + ANON });
@@ -251,7 +251,7 @@ describe('Supabase backup: copying', () => {
     expectSameAsSupabase();
     const rows = g.rows(file(), 'Bills 2026-10');
     expect(rows).toHaveLength(6);
-    expect(rows[1]!.slice(13, 15)).toEqual(['Void', 'Wrong table']);
+    expect(rows[1]!.slice(17, 19)).toEqual(['Void', 'Wrong table']);
     expect(g.records(file(), 'Counters').find((c: any) => c.monthKey === '202610')).toEqual({ monthKey: '202610', last: 6 });
     // Nothing new: one quick call, nothing written.
     const snap = g.snapshot(file());
@@ -417,6 +417,83 @@ describe('Supabase backup: when something goes wrong', () => {
     setUp();
     run();
     expect(billsIn(file(), '202610')[0]!.bill.billNo).toBe('RCPT-202610-0001');
+  });
+});
+
+/** The bill-tab header before 12 Oct 2026 (what the live sheet was first made with). */
+const OLD_HEAD = ['Receipt no', 'Date', 'Time', 'Order type', 'Table', 'Customer', 'Payment', 'Items', 'Item count', 'Subtotal ₹', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Saved by', 'Printed as', 'Rev', 'Client ref', 'Data', 'Data 2'];
+
+/** Turn a month tab back into the old 21-column layout, rows exactly as the old script wrote them. */
+function toOldLayout(ss: FakeSpreadsheet, tabName: string) {
+  const sh = ss.getSheetByName(tabName)! as any;
+  const head: string[] = sh.dump()[0];
+  const rows = sh.dump().slice(1).map((r: unknown[]) => {
+    const json = String(r[head.indexOf('Data')]);
+    const rec = JSON.parse(json.slice(2));
+    const b = rec.bill;
+    return [b.billNo, '01-01-2026', '10:00', b.orderType, b.tableNo ?? '', b.customerName ?? '', b.paymentMode, 'items', b.itemCount, b.subtotalPaise / 100, b.discountPaise / 100, b.roundOffPaise / 100, b.totalPaise / 100, b.status === 'void' ? 'Void' : 'Paid', b.voidReason ?? '', rec.by, b.printedAs ?? '', r[head.indexOf('Rev')], rec.ref, json, ''];
+  });
+  sh.handEdit((s: any) => {
+    s.cols = OLD_HEAD.length;
+    s.v = [OLD_HEAD, ...rows];
+    s.f = [OLD_HEAD.map(() => '@'), ...rows.map(() => OLD_HEAD.map(() => '@'))];
+  });
+}
+
+describe('Supabase backup: the sheet made with the older columns (live since 12 Oct 2026)', () => {
+  it('each month tab is rebuilt with every field in its own column, from the trusted Data copy; nothing lost or doubled', () => {
+    shop();
+    sb.void('RCPT-202609-0002', 'Wrong table');
+    setUp();
+    run();
+    toOldLayout(file(), 'Bills 2026-09');
+    toOldLayout(file(), 'Bills 2026-10');
+    expect(g.rows(file(), 'Bills 2026-10')[0]).toHaveLength(21);
+    const order = file().getSheets().map((s) => s.getName());
+    sb.save('202610', { customerName: 'After the upgrade' });
+    const report = run();
+    expect(report).toContain('Checked: all 13 bills Supabase has are in the sheet.');
+    expect(report).toContain('Check: no damaged rows.');
+    expectSameAsSupabase();
+    expect(file().getSheets().map((s) => s.getName())).toEqual(order); // same tabs, same places, no "(upgrading)" left
+    const head = file().getSheetByName('Bills 2026-09')!.dump()[0]!;
+    expect(head.slice(0, 4)).toEqual(['Receipt no', 'Date', 'Time', 'Day']);
+    expect(head).toContain('Receipt line');
+    const voided = g.rows(file(), 'Bills 2026-09').find((r) => r[0] === 'RCPT-202609-0002')!;
+    expect([voided[0], voided[17], voided[18]]).toEqual(['RCPT-202609-0002', 'Void', 'Wrong table']);
+    expect(voided[8]).toBe('1 × Full Chicken @ ₹450 = ₹450');
+  });
+
+  it('a crash at any step of the rebuild: the next run finishes it, nothing lost or doubled', () => {
+    let steps = 0;
+    for (let k = 0; ; k++) {
+      g = createRuntime({ now: NOW });
+      sb = new FakeSupabase();
+      g.rt.fetch = sb.handler;
+      shop();
+      setUp();
+      run();
+      toOldLayout(file(), 'Bills 2026-10');
+      g.rt.writes = 0;
+      g.rt.failAfter = k;
+      let crashed = false;
+      try {
+        run();
+      } catch {
+        crashed = true;
+      }
+      g.rt.failAfter = Infinity;
+      if (!crashed) {
+        steps = k;
+        break;
+      }
+      g.rt.violations = g.rt.violations.filter((v) => !v.includes('flush'));
+      run();
+      expectSameAsSupabase();
+      expect(file().getSheets().map((s) => s.getName()).filter((n) => n.includes('upgrading'))).toEqual([]);
+      expect(file().getSheetByName('Bills 2026-10')!.dump()[0]![3]).toBe('Day');
+    }
+    expect(steps).toBeGreaterThan(10);
   });
 });
 

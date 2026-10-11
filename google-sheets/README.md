@@ -95,6 +95,14 @@ If you make a **New deployment** instead, it gets a new address, and `sheetsUrl`
 The app keeps using Supabase as before; nothing changes on the phones. Every night, at about **3 am India time**, the script copies everything from Supabase into one Google Sheet, **Tikka Bites – Supabase backup**, in the **Tikka Bites data** folder:
 
 - The tabs are the same as in the Backup above: a tab for each month ("Bills 2026-10"), plus Menu, Cheesy lines, Settings and Counters.
+- **One row per bill, with every detail in its own column:**
+  - receipt no, date, time, day
+  - order type, table, customer, payment
+  - items (qty × rate = amount), item count, categories, veg / non-veg
+  - subtotal, discount (₹ or %) and discount ₹, round-off, total
+  - status, void reason and time, saved by, offline number, receipt line
+
+  Month tabs made with the earlier, shorter columns are rebuilt by themselves on the next copy, from the hidden Data copy, so nothing is lost.
 - **Every month stays here for good.** Supabase and the phones keep only the last 3 months, so this sheet is the only place older bills are kept, apart from Excel exports.
 - **It only reads Supabase.** It asks `public.backup_pull()` (in `supabase/schema.sql`) for what changed since the last copy. That function can't change anything.
   - It needs a long random **backup key**, which only this script knows.
