@@ -121,7 +121,7 @@ describe('sales export', () => {
     const summary = Object.fromEntries(sheets[0]!.rows.map((r) => [r[0], r[1] ?? r[2]]));
     expect(summary).toMatchObject({ 'Total revenue': 810, 'Discounts given': 90, 'Bills (paid)': 1, 'Bills voided (not in totals)': 1, 'Items sold': 2 });
     expect(sheets[0]!.title).toContain('Period: This month (01/09/2026 to 30/09/2026)');
-    expect(sheets[1]!.rows[0]).toEqual(['RCPT-202609-0001', +new Date(2026, 8, 3, 13, 5), +new Date(2026, 8, 3, 13, 5), 'Paid', 'Dine-in', '4', 'Asha & Co <VIP>', 'UPI', '2 × Full Chicken', 2, 900, 90, 0, 810, '']);
+    expect(sheets[1]!.rows[0]).toEqual(['RCPT-2026-0001', +new Date(2026, 8, 3, 13, 5), +new Date(2026, 8, 3, 13, 5), 'Paid', 'Dine-in', '4', 'Asha & Co <VIP>', 'UPI', '2 × Full Chicken', 2, 900, 90, 0, 810, '']);
     expect(sheets[3]!.rows).toEqual([[1, 'Full Chicken', 'Grill Gali', 2, 900]]);
   });
 

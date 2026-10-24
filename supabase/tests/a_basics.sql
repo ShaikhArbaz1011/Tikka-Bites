@@ -35,7 +35,7 @@ declare m text := to_char(clock_timestamp() at time zone 'Asia/Kolkata', 'YYYYMM
 begin
   -- 2 × 450 + 120.50 = 1020.50; −10% = 102.05 (half-up) → 918.45 → rounds to 918.00 (−0.45)
   b := public.save_bill('{"items":[{"menuId":1,"qty":2,"unitPaise":45000},{"menuId":2,"qty":1,"unitPaise":12050}],"orderType":"dine-in","tableNo":"4","customerName":"Asha","paymentMode":"upi","discount":{"kind":"pct","bp":1000},"roundOffPaise":-45,"totalPaise":91800,"cheesyLine":"Our food is like our bill — totally worth it 😋"}');
-  assert b ->> 'billNo' = 'RCPT-' || m || '-0001', 'first number is 0001, got ' || (b ->> 'billNo');
+  assert b ->> 'billNo' = 'RCPT-' || left(m, 4) || '-0001', 'first number is 0001, got ' || (b ->> 'billNo');
   assert (b ->> 'subtotalPaise')::int = 102050 and (b ->> 'discountPaise')::int = 10205 and (b ->> 'roundOffPaise')::int = -45 and (b ->> 'totalPaise')::int = 91800, 'money math';
   assert b -> 'items' -> 0 = '{"menuId":1,"name":"Full Chicken","category":"Grill Gali","isVeg":false,"unitPaise":45000,"qty":2,"linePaise":90000}'::jsonb, 'item snapshot';
   assert b -> 'categories' = '["Grill Gali","Aloo Ke Laloo"]'::jsonb and (b ->> 'hasVeg')::boolean and (b ->> 'hasNonVeg')::boolean and (b ->> 'itemCount')::int = 3, 'derived fields';
@@ -43,7 +43,7 @@ begin
   assert b ->> 'cheesyLine' = 'Our food is like our bill — totally worth it 😋', 'emoji kept';
   -- 120.50 rounds half-up to 121.00 (+0.50)
   b := public.save_bill('{"items":[{"menuId":2,"qty":1,"unitPaise":12050}],"orderType":"takeaway","tableNo":"9","paymentMode":"cash","discount":{"kind":"flat","paise":0},"roundOffPaise":50,"totalPaise":12100,"cheesyLine":""}');
-  assert b ->> 'billNo' = 'RCPT-' || m || '-0002', 'second number is 0002';
+  assert b ->> 'billNo' = 'RCPT-' || left(m, 4) || '-0002', 'second number is 0002';
   assert not (b ? 'tableNo'), 'table number is only kept for dine-in';
   assert (select bool_and(used_in_bills) from public.menu), 'dishes marked as used in bills';
 end $$;
@@ -110,12 +110,12 @@ end $$;
 do $$
 declare m text := to_char(clock_timestamp() at time zone 'Asia/Kolkata', 'YYYYMM'); v jsonb;
 begin
-  v := public.void_bill('RCPT-' || m || '-0001', '  Wrong table  ');
+  v := public.void_bill('RCPT-' || left(m, 4) || '-0001', '  Wrong table  ');
   assert v ->> 'status' = 'void' and v ->> 'voidReason' = 'Wrong table' and v ? 'voidedAt', 'void details';
-  assert (select status from public.bills where bill_no = 'RCPT-' || m || '-0001') = 'void', 'status column updated';
+  assert (select status from public.bills where bill_no = 'RCPT-' || left(m, 4) || '-0001') = 'void', 'status column updated';
 end $$;
-select t.expect_error(format('select public.void_bill(%L, %L)', 'RCPT-' || :'m' || '-0001', 'again'), 'already voided');
-select t.expect_error(format('select public.void_bill(%L, %L)', 'RCPT-' || :'m' || '-0002', 'no'), 'at least 3 characters');
+select t.expect_error(format('select public.void_bill(%L, %L)', 'RCPT-' || left(:'m', 4) || '-0001', 'again'), 'already voided');
+select t.expect_error(format('select public.void_bill(%L, %L)', 'RCPT-' || left(:'m', 4) || '-0002', 'no'), 'at least 3 characters');
 select t.expect_error($q$select public.void_bill('RCPT-190001-0001', 'nope')$q$, 'Bill not found');
 \echo '5. the public anon key alone can read or change nothing'
 reset role;

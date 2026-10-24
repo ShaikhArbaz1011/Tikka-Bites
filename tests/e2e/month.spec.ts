@@ -34,11 +34,11 @@ test('bills around midnight on the 1st land in the right month everywhere', asyn
   await expect(page.locator('.dish-row')).toHaveCount(40);
 
   const jan = await billOneWrap(page);
-  expect(jan).toEqual({ billNo: 'RCPT-202601-0001', date: '31/01/2026 23:58' });
+  expect(jan).toEqual({ billNo: 'RCPT-2026-0001', date: '31/01/2026 23:58' });
 
   await page.clock.setFixedTime(IST('2026-02-01T00:02:00'));
   const feb = await billOneWrap(page);
-  expect(feb).toEqual({ billNo: 'RCPT-202602-0001', date: '01/02/2026 00:02' });
+  expect(feb).toEqual({ billNo: 'RCPT-2026-0002', date: '01/02/2026 00:02' }); // numbers count through the year
 
   // Reports: "This month" (February) and "Last month" (January) each hold one bill.
   await page.getByRole('link', { name: 'Reports', exact: true }).click();
@@ -51,12 +51,12 @@ test('bills around midnight on the 1st land in the right month everywhere', asyn
   await page.getByLabel('Date range').selectOption('lastMonth');
   await expect(page.locator('.range-label')).toHaveText('Last month · Jan 2026');
   await expect(bills).toHaveText('1');
-  await expect(page.locator('.bill-row .bill-no')).toHaveText('RCPT-202601-0001');
+  await expect(page.locator('.bill-row .bill-no')).toHaveText('RCPT-2026-0001');
 
   await page.getByLabel('Date range').selectOption('today');
-  await expect(page.locator('.bill-row .bill-no')).toHaveText('RCPT-202602-0001');
+  await expect(page.locator('.bill-row .bill-no')).toHaveText('RCPT-2026-0002');
   await page.getByLabel('Date range').selectOption('yesterday');
-  await expect(page.locator('.bill-row .bill-no')).toHaveText('RCPT-202601-0001');
+  await expect(page.locator('.bill-row .bill-no')).toHaveText('RCPT-2026-0001');
 
   // Month over month compares Feb with Jan.
   await page.getByLabel('Date range').selectOption('month');
@@ -78,11 +78,58 @@ test('bills around midnight on the 1st land in the right month everywhere', asyn
   const wb = files.get('xl/workbook.xml')!;
   expect([...wb.matchAll(/<sheet name="([^"]+)"/g)].map((m) => m[1])).toEqual(['Summary', 'Bills', 'Items', 'Dish Sales']);
   const b = cells(files.get('xl/worksheets/sheet2.xml')!); // Bills: header on row 1
-  expect([b['A2'], b['B2'], b['A3'], b['B3']]).toEqual(['RCPT-202601-0001', 46053, 'RCPT-202602-0001', 46054]);
+  expect([b['A2'], b['B2'], b['A3'], b['B3']]).toEqual(['RCPT-2026-0001', 46053, 'RCPT-2026-0002', 46054]);
   expect(b['C2']).toBeCloseTo((23 * 60 + 58) / 1440, 8);
   expect(b['C3']).toBeCloseTo(2 / 1440, 8);
   expect(b['H2']).toBe('Cash');
   expect(b['N2']).toBe(150);
 
+  expect(errors).toEqual([]);
+});
+
+test('a bill forgotten earlier this month is entered with its date from the calendar', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+
+  await page.clock.setFixedTime(IST('2026-10-24T15:00:00'));
+  await page.goto('/#/menu');
+  await page.getByRole('button', { name: /Load Tikka Bites menu/ }).click();
+  await expect(page.locator('.dish-row')).toHaveCount(40);
+  await page.getByRole('link', { name: 'Billing', exact: true }).click();
+  await page.locator('.dish-card', { hasText: 'Chicken Tikka Wrap' }).first().click();
+  if (isPhone(page)) await page.locator('.cart-bar').click();
+
+  // The phone's own calendar, limited to 1 Oct … today; today means a normal bill.
+  const date = page.getByLabel('Bill date');
+  await expect(date).toHaveValue('2026-10-24');
+  await expect(date).toHaveAttribute('min', '2026-10-01');
+  await expect(date).toHaveAttribute('max', '2026-10-24');
+  await expect(page.getByLabel('Bill time')).toBeHidden();
+  await date.fill('2026-10-20');
+  await page.getByLabel('Bill time').fill('14:30');
+  await expect(page.locator('.bill-date-note')).toHaveText(/Tue 20 Oct 2026, 14:30/);
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const dialog = page.locator('dialog[open]');
+  await expect(dialog.locator('.modal-title')).toHaveText('Receipt RCPT-2026-0001');
+  await expect(dialog.locator('.r-meta .r-row', { hasText: 'Date' }).locator('.r-num')).toHaveText('20/10/2026 14:30');
+  await expect(dialog.locator('.r-meta .r-row', { hasText: 'Entered' }).locator('.r-num')).toHaveText('24/10/2026 15:00');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+
+  // It stays on that day for the next forgotten bill, until Today is tapped.
+  if (isPhone(page)) await page.locator('.dish-card', { hasText: 'Chicken Tikka Wrap' }).first().click();
+  if (isPhone(page)) await page.locator('.cart-bar').click();
+  await expect(date).toHaveValue('2026-10-20');
+  await page.getByRole('button', { name: 'Today' }).click();
+  await expect(date).toHaveValue('2026-10-24');
+  await expect(page.locator('.bill-date-note')).toBeHidden();
+  if (isPhone(page)) await page.getByRole('button', { name: 'Back to menu' }).click();
+
+  // Reports file it under 20 Oct.
+  await page.getByRole('link', { name: 'Reports', exact: true }).click();
+  await expect(page.locator('.bill-row .bill-when')).toHaveText('20/10/2026 14:30');
+  await page.getByLabel('Date range').selectOption('today');
+  await expect(page.locator('.bill-row')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

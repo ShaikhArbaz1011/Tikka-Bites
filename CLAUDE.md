@@ -76,10 +76,17 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
 - Keep the headers in `netlify.toml` and `vercel.json` identical.
 
 ## Data integrity
-- Receipt numbers (`RCPT-YYYYMM-NNNN`) come from exactly one place:
+- Receipt numbers are `RCPT-YYYY-NNNN`: one count per year (India time), starting again at 0001 every 1 January (owner request, 24 Oct 2026).
+  - Counters are keyed by year (`YYYY`). Old `RCPT-YYYYMM-` and `INV-YYYYMM-` numbers (and their month counters) stay valid everywhere and are never issued again.
+  - A yearly number does not name its month: use the bill's `monthKey`, never the number, to find its month (`billNoParts` in `Code.gs`, `parseBillNo` in `src/core/billNo.ts`).
+  - The 3-month clean-up deletes a year counter only once its whole year is cleared.
+- Bills forgotten earlier **this month** can be entered with their date (owner request, 24 Oct 2026; `src/ui/billing/billDate.ts`).
+  - The draft carries `billedAt`. The server checks it is this month (IST) and not in the future, charges today's prices, and stores `enteredAt` (when it was typed in).
+  - Only a date the cashier picked counts as earlier; a screen left open past midnight still bills "now".
+- Receipt numbers come from exactly one place:
   - Local-only mode: the `saveBill` IndexedDB transaction.
   - Shared mode: the server's `save_bill()` (the SQL function, or `opSaveBill` in `Code.gs`).
-  - Old `INV-` numbers stay valid everywhere and share the monthly counter.
+  - Old `INV-` and `RCPT-YYYYMM-` numbers stay valid everywhere with their own month counters.
 - Shared mode, no internet: bills are saved with a temporary `OFF-<phone>-NNNN` number and queued in `meta.outbox`.
   - They upload as `offline: true`, keeping their sale time and the price charged, and are replaced by the server's bill.
   - Each sync uploads first, then downloads (so a lost reply is never counted twice).

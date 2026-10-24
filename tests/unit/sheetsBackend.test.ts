@@ -15,6 +15,8 @@ const DAY = 24 * HOUR;
 /** 25 Sep 2026, 13:00 India time. Kept months: July, August, September. */
 const NOW = Date.UTC(2026, 8, 25, 7, 30);
 const M = '202609';
+/** Receipt numbers count per year (owner request, 24 Oct 2026). */
+const Y = M.slice(0, 4);
 
 let g: FakeAppsScript;
 let token: string;
@@ -65,7 +67,7 @@ function body(items: [number, number, number][], extra: Record<string, unknown> 
 }
 const save = (b: Record<string, unknown>, t?: string) => call('save_bill', { p_bill: b }, t);
 const billTab = (ss: FakeSpreadsheet, month = M) => g.records<{ bill: any; by: string; ref: string }>(ss, `Bills ${month.slice(0, 4)}-${month.slice(4)}`);
-const counter = (ss: FakeSpreadsheet, month = M) => g.records<{ monthKey: string; last: number }>(ss, 'Counters').find((c) => c.monthKey === month)?.last;
+const counter = (ss: FakeSpreadsheet, key = Y) => g.records<{ monthKey: string; last: number }>(ss, 'Counters').find((c) => c.monthKey === key)?.last;
 
 /** Main and Backup hold exactly the same rows in every tab Main has. */
 function expectBackupMatches() {
@@ -182,11 +184,11 @@ describe('bills: the same rules as the SQL server', () => {
   it('numbers from 0001; money math matches the app; item snapshot; table only for dine-in', () => {
     // 2 × 450 + 120.50 = 1020.50; −10% = 102.05 (half-up) → 918.45 → rounds to 918.00 (−0.45)
     const b = ok(save({ ...body([[1, 2, 45000], [2, 1, 12050]]), orderType: 'dine-in', tableNo: ' 4 ', customerName: 'Asha', paymentMode: 'upi', discount: { kind: 'pct', bp: 1000 }, roundOffPaise: -45, totalPaise: 91800, cheesyLine: 'Totally worth it 😋' }));
-    expect(b).toMatchObject({ billNo: `RCPT-${M}-0001`, subtotalPaise: 102050, discountPaise: 10205, roundOffPaise: -45, totalPaise: 91800, itemCount: 3, tableNo: '4', customerName: 'Asha', status: 'paid', monthKey: M, hour: 13, weekday: 5, cheesyLine: 'Totally worth it 😋' });
+    expect(b).toMatchObject({ billNo: `RCPT-${Y}-0001`, subtotalPaise: 102050, discountPaise: 10205, roundOffPaise: -45, totalPaise: 91800, itemCount: 3, tableNo: '4', customerName: 'Asha', status: 'paid', monthKey: M, hour: 13, weekday: 5, cheesyLine: 'Totally worth it 😋' });
     expect(b.items[0]).toEqual({ menuId: 1, name: 'Full Chicken', category: 'Grill Gali', isVeg: false, unitPaise: 45000, qty: 2, linePaise: 90000 });
     expect([b.categories, b.hasVeg, b.hasNonVeg]).toEqual([['Grill Gali', 'Aloo Ke Laloo'], true, true]);
     const b2 = ok(save({ ...body([[2, 1, 12050]]), tableNo: '9', roundOffPaise: 50, totalPaise: 12100 }));
-    expect(b2.billNo).toBe(`RCPT-${M}-0002`);
+    expect(b2.billNo).toBe(`RCPT-${Y}-0002`);
     expect('tableNo' in b2).toBe(false);
     const menu = g.records(g.main(), 'Menu');
     expect(menu.filter((d) => d.used_in_bills).map((d) => d.id)).toEqual([1, 2]);
@@ -194,7 +196,7 @@ describe('bills: the same rules as the SQL server', () => {
     // The readable columns, for people
     const row = g.rows(g.main(), 'Bills 2026-09')[0]!;
     expect(row.slice(0, 23)).toEqual([
-      `RCPT-${M}-0001`, '25-09-2026', '13:00', 'Friday', 'Dine-in', '4', 'Asha', 'UPI',
+      `RCPT-${Y}-0001`, '25-09-2026', '13:00', 'Friday', 'Dine-in', '4', 'Asha', 'UPI',
       '2 × Full Chicken @ ₹450 = ₹900; 1 × Masala Fries @ ₹120.50 = ₹120.50', 3, 'Grill Gali, Aloo Ke Laloo', 'Veg + Non-veg',
       1020.5, '10%', 102.05, -0.45, 918, 'Paid', '', '', 'owner', '', 'Totally worth it 😋',
     ]);
@@ -206,7 +208,7 @@ describe('bills: the same rules as the SQL server', () => {
     const b2 = ok(save(b));
     expect(b2).toEqual(b1);
     expect(billTab(g.main())).toHaveLength(1);
-    expect(ok(save({ ...b, clientRef: randomUUID() })).billNo).toBe(`RCPT-${M}-0002`);
+    expect(ok(save({ ...b, clientRef: randomUUID() })).billNo).toBe(`RCPT-${Y}-0002`);
     refused(save({ ...b, clientRef: 'not-a-uuid' }), 'Invalid bill reference');
     expect('clientRef' in b1).toBe(false);
   });
@@ -227,7 +229,7 @@ describe('bills: the same rules as the SQL server', () => {
     refused(save({ ...body([[1, 1, 45000]]), customerName: 'x'.repeat(61) }), 'Some text in the bill is too long');
     refused(call('save_bill', { p_bill: 'nope' }), 'Add at least one item');
     expect(counter(g.main())).toBe(1);
-    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${M}-0002`);
+    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${Y}-0002`);
   });
 
   it('offline bills keep their sale time, month, price and printed number', () => {
@@ -241,7 +243,7 @@ describe('bills: the same rules as the SQL server', () => {
       orderType: 'takeaway', paymentMode: 'upi', discount: { kind: 'flat', paise: 0 }, roundOffPaise: 0, totalPaise: 12000, cheesyLine: '',
     };
     const b = ok(save(off));
-    expect(b).toMatchObject({ billNo: 'RCPT-202608-0001', monthKey: '202608', createdAt: at, hour: 23, printedAs: 'OFF-K7Q-0003' });
+    expect(b).toMatchObject({ billNo: 'RCPT-2026-0001', monthKey: '202608', createdAt: at, hour: 23, printedAs: 'OFF-K7Q-0003' });
     expect(b.items[0]).toMatchObject({ unitPaise: 6000, name: 'Sweet Lassi' });
     expect(ok(save(off))).toEqual(b); // a retry gets the same bill
     expect(billTab(g.main(), '202608')).toHaveLength(1);
@@ -381,22 +383,24 @@ describe('moving the first phone in', () => {
     refused(call('patch_settings', { p_set: { phone: '1' } }), 'not set up yet');
     refused(call('import_device_data', { p_menu: [], p_lines: [], p_settings: { name: '' }, p_counters: [] }), 'Invalid settings');
     expect(g.records(g.main(), 'Settings')).toEqual([]); // a refused import writes nothing
-    ok(call('import_device_data', { p_menu: [DISHES[0], { ...DISHES[2], id: 9 }], p_lines: [{ id: 4, text: 'Mine', active: false }], p_settings: { ...SETTINGS, lastBackupAt: 1700000000000 }, p_counters: [{ monthKey: M, last: 18 }, { monthKey: '202401', last: 7 }] }));
-    // Billing can already go on safely while the old bills upload
-    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${M}-0019`);
+    ok(call('import_device_data', { p_menu: [DISHES[0], { ...DISHES[2], id: 9 }], p_lines: [{ id: 4, text: 'Mine', active: false }], p_settings: { ...SETTINGS, lastBackupAt: 1700000000000 }, p_counters: [{ monthKey: M, last: 18 }, { monthKey: '202401', last: 7 }, { monthKey: Y, last: 30 }] }));
+    // Billing can already go on safely while the old bills upload: after the phone's yearly count
+    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${Y}-0031`);
     const bills = [
       { billNo: `INV-${M}-0017`, createdAt: 1, monthKey: M, status: 'paid', items: [] },
       { billNo: `RCPT-${M}-0018`, createdAt: 2, monthKey: M, status: 'void', items: [], sync: { clientRef: 'x' } },
+      { billNo: `RCPT-${Y}-0040`, createdAt: 3, monthKey: M, status: 'paid', items: [] },
     ];
-    expect(ok(call('import_bills', { p_bills: bills }))).toBe(2);
+    expect(ok(call('import_bills', { p_bills: bills }))).toBe(3);
     expect(ok(call('import_bills', { p_bills: bills }))).toBe(0);
     expect(ok(call('import_bills', { p_bills: [{ billNo: 'INV-202001-0001', createdAt: 1, monthKey: '202001', status: 'paid' }] }))).toBe(0); // older than 3 months
     refused(call('import_bills', { p_bills: [{ billNo: `RCPT-${M}-0001`, createdAt: 1, monthKey: '202608', status: 'paid' }] }), 'Invalid bill from the phone');
+    refused(call('import_bills', { p_bills: [{ billNo: 'RCPT-2025-0001', createdAt: 1, monthKey: M, status: 'paid' }] }), 'Invalid bill from the phone');
     ok(call('finish_import'));
-    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${M}-0020`);
+    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${Y}-0041`); // after the highest imported yearly number
     expect(ok(call('insert_dishes', { p_rows: [{ name: 'Soft Drink', category: 'Thanda Matter', price_paise: 2000, is_veg: true }] }))[0].id).toBe(10);
     expect(ok(call('insert_line', { p_text: 'New line' })).id).toBe(5);
-    expect(billTab(g.main())).toHaveLength(4);
+    expect(billTab(g.main())).toHaveLength(5);
     expect(billTab(g.main()).find((b) => b.bill.billNo.endsWith('0018'))!.bill).not.toHaveProperty('sync');
     refused(call('import_bills', { p_bills: [] }), 'only allowed while setting up');
     refused(call('import_device_data', { p_menu: [], p_lines: [], p_settings: SETTINGS, p_counters: [] }), 'already set up');
@@ -463,7 +467,7 @@ describe('users (super admin only)', () => {
     refused(call('list_staff', {}, staff), 'Only the super admin can manage users.');
     refused(call('staff_admin', { action: 'remove', username: 'counter1' }, staff), 'Only the super admin can manage users.');
     refused(call('sheet_status', {}, staff), 'Only the super admin');
-    expect(ok(save(body([[1, 1, 45000]]), staff)).billNo).toBe(`RCPT-${M}-0001`); // staff can bill
+    expect(ok(save(body([[1, 1, 45000]]), staff)).billNo).toBe(`RCPT-${Y}-0001`); // staff can bill
     expect(billTab(g.main())[0]!.by).toBe('counter1');
 
     g.exec('setOwnerLogin', 'boss', 'boss-pass-1234');
@@ -586,7 +590,7 @@ describe('the sheets cannot get corrupted', () => {
 
   it('saves one after another get 1, 2, 3 … with no gaps or repeats; a busy lock writes nothing', () => {
     const nos = Array.from({ length: 20 }, () => ok(save({ ...body([[3, 1, 6000]]), clientRef: randomUUID() })).billNo);
-    expect(nos).toEqual(Array.from({ length: 20 }, (_, i) => `RCPT-${M}-${String(i + 1).padStart(4, '0')}`));
+    expect(nos).toEqual(Array.from({ length: 20 }, (_, i) => `RCPT-${Y}-${String(i + 1).padStart(4, '0')}`));
     g.rt.lockBusy = true;
     const writes = g.rt.writes;
     refused(save(body([[3, 1, 6000]])), 'The Google Sheet is busy', 'server');
@@ -601,7 +605,7 @@ describe('the sheets cannot get corrupted', () => {
     refused(r, 'The Main Google Sheet was changed by hand (tab "Menu": column C should be "Category"', 'server');
     expect(g.rt.writes).toBe(writes);
     menu.handEdit((sh) => sh.deleteColumns(3, 1));
-    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${M}-0001`);
+    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${Y}-0001`);
   });
 
   it('a renamed tab or a damaged Data cell is reported, never guessed', () => {
@@ -699,8 +703,8 @@ describe('the sheets cannot get corrupted', () => {
     expect(g.sheet(oldMain).name).toMatch(/^Tikka Bites – Main \(damaged 2026-09-25\)$/);
     expect(g.main().name).toBe('Tikka Bites – Main');
     expect(ok(call('my_role'))).toBe('super_admin'); // the same token still works
-    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${M}-0002`);
-    expect(billTab(g.main()).map((x) => x.bill.billNo)).toEqual([a.billNo, `RCPT-${M}-0002`]);
+    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${Y}-0002`);
+    expect(billTab(g.main()).map((x) => x.bill.billNo)).toEqual([a.billNo, `RCPT-${Y}-0002`]);
     expectBackupMatches();
     expect(ok(signIn('owner', 'owner-pass-123')).username).toBe('owner');
   });
@@ -720,5 +724,52 @@ describe('the sheets cannot get corrupted', () => {
     refused(g.post('not json'), 'The request was not understood.', 'server');
     refused(call('drop_everything'), 'older than the app', 'setup');
     expect(JSON.parse(g.exec('doGet').content)).toMatchObject({ ok: true });
+  });
+});
+
+describe('receipt numbers per year, and bills entered later for an earlier date (owner request, 24 Oct 2026)', () => {
+  beforeEach(() => setUpShop());
+  /** India time → ms. Month is 1-based. */
+  const istMs = (y: number, m: number, d: number, h = 0, min = 0) => Date.UTC(y, m - 1, d, h, min) - 5.5 * HOUR;
+  const head = () => g.main().getSheetByName('Bills 2026-09')!.dump()[0]!;
+
+  it("a bill forgotten earlier this month is saved under its date, at today's prices, numbered in the year", () => {
+    ok(save(body([[1, 1, 45000]]))); // RCPT-2026-0001 on 25 Sep
+    const at = istMs(2026, 9, 20, 14, 30);
+    const b = ok(save({ ...body([[2, 1, 12050]]), billedAt: at }));
+    expect(b).toMatchObject({ billNo: `RCPT-${Y}-0002`, createdAt: at, monthKey: M, hour: 14, weekday: 0, enteredAt: NOW }); // 20 Sep 2026 is a Sunday
+    const row = g.rows(g.main(), 'Bills 2026-09')[1]!;
+    expect(row.slice(0, 3)).toEqual([`RCPT-${Y}-0002`, '20-09-2026', '14:30']);
+    expect(row[head().indexOf('Entered on (if added later)')]).toBe('25-09-2026 13:00');
+    expect(g.rows(g.main(), 'Bills 2026-09')[0]![head().indexOf('Entered on (if added later)')]).toBe('');
+    refused(save({ ...body([[1, 1, 45000]]), billedAt: istMs(2026, 8, 31, 23, 0) }), 'only be added for this month');
+    refused(save({ ...body([[1, 1, 45000]]), billedAt: NOW + 2 * HOUR }), "can't be in the future");
+    refused(save({ ...body([[1, 1, 45000]]), billedAt: 'yesterday' }), 'Invalid bill date');
+    refused(save({ ...body([[1, 1, 40000]]), billedAt: at }), 'was changed on another device'); // today's prices, like any online bill
+    expect(counter(g.main())).toBe(2); // refused bills use up no number
+    expect(ok(call('pull_changes', { p_since: 0 })).bills.map((x: { billNo: string }) => x.billNo)).toEqual([`RCPT-${Y}-0001`, `RCPT-${Y}-0002`]);
+    expectBackupMatches();
+  });
+
+  it('on 1 January (India time) the count starts again at 0001; a bill of last year is still found and voided', () => {
+    g.rt.clock = istMs(2026, 12, 31, 23, 59);
+    token = ok(signIn('owner', 'owner-pass-123')).accessToken;
+    const dec = ok(save(body([[1, 1, 45000]])));
+    expect(dec.billNo).toBe('RCPT-2026-0001');
+    g.rt.clock = istMs(2027, 1, 1, 0, 30); // still 31 Dec in UTC
+    const jan = ok(save(body([[1, 1, 45000]])));
+    expect([jan.billNo, jan.monthKey]).toEqual(['RCPT-2027-0001', '202701']);
+    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe('RCPT-2027-0002');
+    expect(ok(call('void_bill', { p_bill_no: dec.billNo, p_reason: 'Wrong item' })).status).toBe('void'); // found in "Bills 2026-12"
+    expect([counter(g.main(), '2026'), counter(g.main(), '2027')]).toEqual([1, 2]);
+    expect(g.exec('healthCheck')).toMatchObject({ ok: true });
+    expectBackupMatches();
+  });
+
+  it('the counters tab lost (or behind): the year’s highest number in the month tabs still prevents a repeat', () => {
+    ok(save(body([[1, 1, 45000]])));
+    ok(save({ ...body([[1, 1, 45000]]), billedAt: istMs(2026, 9, 3, 12) }));
+    g.main().getSheetByName('Counters')!.handEdit((sh) => sh.getRange(2, 1, 1, sh.dump()[0]!.length).clearContent());
+    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${Y}-0003`);
   });
 });

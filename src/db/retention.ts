@@ -20,7 +20,11 @@ export async function purgeOldMonths(keepFrom: string = keepFromMonth()): Promis
     removed++;
   }
   for (let c = await tx.objectStore('monthlyStats').openCursor(older); c; c = await c.continue()) await c.delete();
-  for (let c = await tx.objectStore('counters').openCursor(older); c; c = await c.continue()) await c.delete();
+  // Month counters of cleared months go; a year counter (YYYY) only once its whole year is cleared.
+  for (let c = await tx.objectStore('counters').openCursor(older); c; c = await c.continue()) {
+    const k = String(c.key);
+    if (k.length === 6 || k < keepFrom.slice(0, 4)) await c.delete();
+  }
   if (gone.size) {
     const meta = tx.objectStore('meta');
     const outbox = (await meta.get('outbox')) as string[] | undefined;

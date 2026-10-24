@@ -63,7 +63,7 @@ test('Google Sheets: sign-in, setup, two phones, offline bill, fingerprint, void
   expect(s.backup.menu).toHaveLength(40); // …and in the Backup
 
   const first = await billOne(p1, 'Chicken Tikka Wrap');
-  expect(first.no).toMatch(/^RCPT-\d{6}-0001$/); // numbered by the sheet
+  expect(first.no).toMatch(/^RCPT-\d{4}-0001$/); // numbered by the sheet
   await first.dialog.getByRole('button', { name: 'Done' }).click();
 
   // ---------- Phone 2: a counter phone ----------
@@ -93,7 +93,7 @@ test('Google Sheets: sign-in, setup, two phones, offline bill, fingerprint, void
   const uploaded = s.main.bills.filter((b) => b.printedAs === off.no);
   expect(uploaded).toHaveLength(1);
   const finalNo = uploaded[0]!.billNo;
-  expect(finalNo).toMatch(/^RCPT-\d{6}-0002$/);
+  expect(finalNo).toMatch(/^RCPT-\d{4}-0002$/);
   expect(uploaded[0]!.savedBy).toBe('counter1');
   await p2.getByRole('link', { name: 'Reports', exact: true }).click();
   await expect(p2.locator('.bill-row', { hasText: finalNo })).toBeVisible();

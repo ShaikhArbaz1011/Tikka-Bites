@@ -21,5 +21,5 @@ do $$
 declare m text := to_char(clock_timestamp() at time zone 'Asia/Kolkata', 'YYYYMM'); b jsonb;
 begin
   b := public.save_bill('{"items":[{"menuId":2,"qty":1,"unitPaise":12050}],"orderType":"takeaway","paymentMode":"cash","discount":{"kind":"flat","paise":0},"roundOffPaise":0,"totalPaise":12050,"cheesyLine":""}');
-  assert b ->> 'billNo' = 'RCPT-' || m || '-10000', 'got ' || (b ->> 'billNo');
+  assert b ->> 'billNo' = 'RCPT-' || left(m, 4) || '-10000', 'got ' || (b ->> 'billNo');
 end $$;

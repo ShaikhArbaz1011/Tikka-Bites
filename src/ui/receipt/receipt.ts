@@ -49,6 +49,7 @@ export function buildReceipt(bill: Bill, s: Settings, width: ReceiptWidth): HTML
       bill.printedAs ? row('Printed as', bill.printedAs) : null,
       bill.sync && bill.status === 'paid' ? h('div', { class: 'r-offline', text: 'Made offline: final receipt number is given when this phone is back online.' }) : null,
       row('Date', formatDateTime(bill.createdAt)),
+      bill.enteredAt !== undefined ? row('Entered', formatDateTime(bill.enteredAt)) : null, // added later for an earlier date
       row('Order', orderLine(bill)),
       bill.customerName ? row('Customer', bill.customerName) : null,
     ),

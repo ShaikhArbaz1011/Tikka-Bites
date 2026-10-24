@@ -301,6 +301,11 @@ create table if not exists public.counters (
   last integer not null check (last >= 0)
 );
 
+-- Receipt numbers per year (owner request, 24 Oct 2026): counters are kept per year (YYYY);
+-- the old per-month counters (YYYYMM) stay for the old RCPT-YYYYMM-/INV-YYYYMM- numbers.
+alter table public.counters drop constraint if exists counters_month_key_check;
+alter table public.counters add constraint counters_month_key_check check (month_key ~ '^[0-9]{4}([0-9]{2})?$');
+
 create table if not exists public.bills (
   bill_no text primary key check (bill_no ~ '^(RCPT|INV)-[0-9]{6}-[0-9]{4,}$'),
   created_at bigint not null,
@@ -310,6 +315,9 @@ create table if not exists public.bills (
   created_by uuid default auth.uid(),                          -- which staff account saved it
   rev bigint not null default 0
 );
+
+alter table public.bills drop constraint if exists bills_bill_no_check;
+alter table public.bills add constraint bills_bill_no_check check (bill_no ~ '^(RCPT-[0-9]{4}|(RCPT|INV)-[0-9]{6})-[0-9]{4,}$');
 
 -- A retry of the same save (the reply was lost on a bad connection) carries the same
 -- reference, so it gets the bill that was already saved instead of a second receipt.
@@ -515,6 +523,8 @@ declare
   v_offline boolean := coalesce(p_bill -> 'offline' = 'true'::jsonb, false);
   v_at_ms bigint;
   v_printed text;
+  v_entered bigint;
+  v_year text;
 begin
   perform public.require_staff();
   if jsonb_typeof(p_bill) is distinct from 'object' or jsonb_typeof(p_bill -> 'items') is distinct from 'array'
@@ -556,6 +566,26 @@ begin
     if v_printed is not null and v_printed !~ '^OFF-[A-Z0-9]{3,6}-[0-9]{4,}$' then
       raise exception 'Invalid offline bill number' using errcode = 'P0001';
     end if;
+    -- A back-dated bill made offline: when it was typed in.
+    if coalesce(p_bill ->> 'enteredAt', '') ~ '^[0-9]{12,14}$'
+       and (p_bill ->> 'enteredAt')::bigint between v_at_ms and public.now_ms() + 600000 then
+      v_entered := (p_bill ->> 'enteredAt')::bigint;
+    end if;
+  elsif p_bill ? 'billedAt' then
+    -- Entered later for an earlier day of THIS month (owner request, 24 Oct 2026), at today's prices.
+    if coalesce(p_bill ->> 'billedAt', '') !~ '^[0-9]{12,14}$' then
+      raise exception 'Invalid bill date' using errcode = 'P0001';
+    end if;
+    v_at_ms := (p_bill ->> 'billedAt')::bigint;
+    if v_at_ms > public.now_ms() + 600000 then
+      raise exception 'The bill date can''t be in the future.' using errcode = 'P0001';
+    end if;
+    if to_char(to_timestamp(v_at_ms / 1000.0) at time zone 'Asia/Kolkata', 'YYYYMM') <> v_month then
+      raise exception 'Bills for an earlier date can only be added for this month.' using errcode = 'P0001';
+    end if;
+    v_entered := public.now_ms();
+    v_now := to_timestamp(v_at_ms / 1000.0);
+    v_local := v_now at time zone 'Asia/Kolkata';
   end if;
 
   for v_item in select value from jsonb_array_elements(p_bill -> 'items') loop
@@ -637,10 +667,12 @@ begin
     raise exception 'Some text in the bill is too long' using errcode = 'P0001';
   end if;
 
-  insert into public.counters as c (month_key, last) values (v_month, 1)
+  -- One counter per year (India time): RCPT-2026-0001 … and RCPT-2027-0001 from 1 January.
+  v_year := to_char(v_local, 'YYYY');
+  insert into public.counters as c (month_key, last) values (v_year, 1)
     on conflict (month_key) do update set last = c.last + 1
     returning c.last into v_seq;
-  v_no := 'RCPT-' || v_month || '-' || lpad(v_seq::text, greatest(4, char_length(v_seq::text)), '0');
+  v_no := 'RCPT-' || v_year || '-' || lpad(v_seq::text, greatest(4, char_length(v_seq::text)), '0');
 
   v_bill := jsonb_strip_nulls(jsonb_build_object(
     'billNo', v_no,
@@ -664,6 +696,7 @@ begin
     'hasNonVeg', v_nonveg,
     'cheesyLine', v_cheesy,
     'printedAs', v_printed,
+    'enteredAt', v_entered,
     'status', 'paid'));
   update public.menu set used_in_bills = true where id = any (v_ids) and not used_in_bills;
   insert into public.bills (bill_no, created_at, month_key, status, data, client_ref)
@@ -700,7 +733,7 @@ end $$;
 
 -- ---------- One-time move of the first device's data into the shared database -----
 -- Allowed only while the shared database is still empty. Bills keep their numbers
--- (INV- or RCPT-). The monthly counters are set first, from the device's own
+-- (INV-, RCPT-YYYYMM- or RCPT-YYYY-). The counters are set first, from the device's own
 -- counters, so new bills saved while old ones are still uploading never collide.
 create or replace function public.import_device_data(p_menu jsonb, p_lines jsonb, p_settings jsonb, p_counters jsonb)
 returns void
@@ -752,9 +785,9 @@ begin
   on conflict (bill_no) do nothing;
   get diagnostics v_added = row_count;
   insert into public.counters as c (month_key, last) -- belt and braces; normally already set
-  select b ->> 'monthKey', max(substring(b ->> 'billNo' from '-([0-9]+)$')::integer)
+  select substring(b ->> 'billNo' from '^[A-Z]+-([0-9]{4}(?:[0-9]{2})?)-'), max(substring(b ->> 'billNo' from '-([0-9]+)$')::integer)
     from jsonb_array_elements(p_bills) b
-   where b ->> 'monthKey' >= public.keep_from_month()
+   where b ->> 'monthKey' >= public.keep_from_month() and b ->> 'billNo' ~ '^(RCPT-[0-9]{4}|(RCPT|INV)-[0-9]{6})-[0-9]{4,}$'
    group by 1
   on conflict (month_key) do update set last = greatest(c.last, excluded.last);
   return v_added;
@@ -784,7 +817,9 @@ begin
   perform 1 from public.sync_clock where id = 1 for update;
   delete from public.bills where month_key < p_keep;
   get diagnostics v_n = row_count;
-  delete from public.counters where month_key < p_keep;
+  -- Month counters (YYYYMM) of cleared months go; a year counter (YYYY) only once its whole year is cleared.
+  delete from public.counters
+   where (char_length(month_key) = 6 and month_key < p_keep) or (char_length(month_key) = 4 and month_key < left(p_keep, 4));
   return v_n;
 end $$;
 

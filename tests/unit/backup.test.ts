@@ -46,12 +46,12 @@ describe('backup round trip', () => {
     await importBackup(v.backup);
 
     expect(await getMonthlyStats('202609')).toEqual(statsBefore);
-    expect((await getBill('RCPT-202609-0002'))!.status).toBe('void');
+    expect((await getBill('RCPT-2026-0002'))!.status).toBe('void');
     expect((await listMenu()).map((d) => d.name).sort()).toEqual(['Dosa', 'Fish Fry']);
     expect((await getSettings()).name).toBe('Dosa Corner');
     // Counter continues after the restored bills.
     const next = await saveBill({ items: [{ menuId: (await listMenu())[0]!.id, qty: 1 }], orderType: 'takeaway', paymentMode: 'cash', discount: NO_DISCOUNT }, SEP);
-    expect(next.billNo).toBe('RCPT-202609-0004');
+    expect(next.billNo).toBe('RCPT-2026-0004');
   });
 
   it('new backups say "tikkabites"; backups made before 12 Oct 2026 ("restobill") still restore', async () => {
@@ -81,7 +81,7 @@ describe('strict import validation', () => {
     ['tampered total', (j) => (j.bills[0].totalPaise += 100), /does not add up/],
     ['tampered line amount', (j) => (j.bills[0].items[0].linePaise = 1), /price × quantity/],
     ['qty out of range', (j) => (j.bills[0].items[0].qty = 1000), /between 1 and 999/],
-    ['bad bill number', (j) => (j.bills[0].billNo = 'X-1'), /RCPT-YYYYMM-0001/],
+    ['bad bill number', (j) => (j.bills[0].billNo = 'X-1'), /RCPT-YYYY-0001/],
     ['duplicate bill number', (j) => j.bills.push(structuredClone(j.bills[0])), /duplicate bill number/],
     ['bad enum', (j) => (j.bills[0].paymentMode = 'crypto'), /must be one of/],
     ['string instead of bool', (j) => (j.menu[0].isVeg = 'yes'), /true or false/],
@@ -155,11 +155,15 @@ describe('dish photos (removed at the owner’s request)', () => {
   });
 });
 
-describe('receipt numbers (RCPT-, formerly INV-)', () => {
-  it('restores bills an older version numbered INV-; new bills carry on the count as RCPT-', async () => {
+describe('receipt numbers (RCPT-YYYY-, formerly RCPT-YYYYMM- and INV-YYYYMM-)', () => {
+  it('restores bills numbered by older versions; new bills use the yearly count', async () => {
     await seed();
     const j = (await backupJson()) as { bills: { billNo: string }[] };
-    for (const b of j.bills) b.billNo = b.billNo.replace(/^RCPT-/, 'INV-');
+    for (const b of j.bills) b.billNo = b.billNo.replace(/^RCPT-2026-/, 'INV-202609-');
+    j.bills[2]!.billNo = 'RCPT-202609-0003'; // and one from the monthly days
+    const wrongMonth = structuredClone(j);
+    wrongMonth.bills[2]!.billNo = 'RCPT-202610-0003';
+    expect(validateBackup(wrongMonth).ok).toBe(false); // a monthly number must match its month
     const v = validateBackup(j);
     expect(v.ok).toBe(true);
     globalThis.indexedDB = new IDBFactory();
@@ -168,6 +172,7 @@ describe('receipt numbers (RCPT-, formerly INV-)', () => {
     await importBackup(v.backup);
     expect((await getBill('INV-202609-0002'))!.status).toBe('void');
     const next = await saveBill({ items: [{ menuId: (await listMenu())[0]!.id, qty: 1 }], orderType: 'takeaway', paymentMode: 'cash', discount: NO_DISCOUNT }, SEP);
-    expect(next.billNo).toBe('RCPT-202609-0004');
+    expect(next.billNo).toBe('RCPT-2026-0001'); // the yearly count starts fresh beside the old monthly numbers
+    expect((await getBill('RCPT-202609-0003'))!.billNo).toBe('RCPT-202609-0003');
   });
 });

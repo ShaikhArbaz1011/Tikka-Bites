@@ -43,6 +43,14 @@
 .disc-row, .pay-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .disc-row .field-label, .pay-row .field-label { width: 72px; }
 .disc-row .input { flex: 1; width: 90px; }
+/* Bill date: a bill forgotten earlier this month (owner request, 24 Oct 2026) */
+.bill-date-field { display: grid; gap: 6px; }
+.date-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.date-row .field-label { width: 72px; }
+.date-row .bill-date { flex: 1; min-width: 140px; width: auto; }
+.date-row .bill-time { width: 110px; }
+.bill-date-field.is-past .bill-date, .bill-date-field.is-past .bill-time { border-color: var(--accent); }
+.bill-date-note { margin: 0; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; font-size: 14px; }
 .cart-empty { padding: 20px 0; text-align: center; }
 
 .cart-lines { list-style: none; margin: 0; padding: 0; display: grid; }

@@ -42,7 +42,7 @@ select case when m = '202606' and k = 1 then 'INV-' else 'RCPT-' end || m || '-'
        1, m, case when m = '202607' and k = 3 then 'void' else 'paid' end, jsonb_build_object('totalPaise', 45000)
   from (values ('202605', 2), ('202606', 3), ('202607', 4), ('202608', 5), ('202609', 6), ('202610', 1)) as months(m, n),
        generate_series(1, n) as k;
-insert into public.counters (month_key, last) values ('202605', 2), ('202606', 3), ('202607', 4), ('202608', 5), ('202609', 6), ('202610', 1);
+insert into public.counters (month_key, last) values ('202605', 2), ('202606', 3), ('202607', 4), ('202608', 5), ('202609', 6), ('202610', 1), ('2025', 900), ('2026', 21);
 
 -- A bill made at 00:10 on 1 August India time is an AUGUST bill (UTC is still 31 July).
 select public.allow_staff('owner@tikka.test', 'owner') \g :devnull
@@ -100,6 +100,10 @@ begin
   assert (select array_agg(distinct month_key order by month_key) from public.bills where month_key between '202601' and '202612') = array['202609', '202610'], 'Sep, Oct left';
   n := public.purge_months_before(public.keep_from_month_at('2027-01-01 00:00+05:30'));
   assert n = 7, 'September (6) + October (1) deleted by 1 Jan 2027, got ' || n;
+  assert not exists (select 1 from public.counters where month_key = '2025'), 'the 2025 year counter is gone';
+  assert (select last from public.counters where month_key = '2026') = 21, 'on 1 Jan 2027 the 2026 counter stays (Nov and Dec 2026 are still kept)';
+  perform public.purge_months_before('202703');
+  assert not exists (select 1 from public.counters where month_key = '2026'), 'once all of 2026 is cleared its year counter goes too';
 end $$;
 
 \echo 'R7. safety: bad months refused; staff cannot choose a date; only the live rule is theirs'

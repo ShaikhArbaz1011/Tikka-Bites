@@ -45,10 +45,11 @@ async function buildBill(draft: BillDraft, now: number): Promise<Omit<Bill, 'bil
   await tx.objectStore('meta').put(pick.state, 'shuffleBag');
   await tx.done;
 
-  const date = new Date(now);
+  const at = draft.billedAt ?? now; // a back-dated bill keeps its own date
+  const date = new Date(at);
   return {
-    createdAt: now,
-    monthKey: monthKeyOf(now),
+    createdAt: at,
+    monthKey: monthKeyOf(at),
     hour: date.getHours(),
     weekday: date.getDay(),
     items,
@@ -67,6 +68,7 @@ async function buildBill(draft: BillDraft, now: number): Promise<Omit<Bill, 'bil
     hasNonVeg: items.some((i) => !i.isVeg),
     cheesyLine: lines.find((l) => l.id === pick.id)?.text ?? FALLBACK_LINE,
     status: 'paid',
+    ...(draft.billedAt !== undefined ? { enteredAt: now } : {}),
   };
 }
 
@@ -86,6 +88,7 @@ async function saveBill(draft: BillDraft, now: number): Promise<Bill> {
         roundOffPaise: bill.roundOffPaise,
         totalPaise: bill.totalPaise,
         cheesyLine: bill.cheesyLine,
+        ...(draft.billedAt !== undefined ? { billedAt: draft.billedAt } : {}),
       },
       onlineSaveTimeoutMs(),
     );

@@ -83,7 +83,7 @@ test('add dishes → bill → print preview → appears in reports → void', as
   // 3. Save & Print → receipt preview, print dialog requested
   await page.getByRole('button', { name: 'Save & Print' }).click();
   const dialog = page.locator('dialog[open]');
-  await expect(dialog.locator('.modal-title')).toHaveText(/RCPT-\d{6}-0001/);
+  await expect(dialog.locator('.modal-title')).toHaveText(/RCPT-\d{4}-0001/);
   const billNo = (await dialog.locator('.modal-title').innerText()).replace('Receipt ', '');
   await expect(dialog.locator('.receipt')).toContainText('Masala Dosa');
   await expect(dialog.locator('.receipt')).toContainText('Dine-in · Table 9');
@@ -154,7 +154,7 @@ test('works offline after the first visit (PWA)', async ({ page, context }) => {
   await page.locator('.dish-card').first().click();
   if (isPhone(page)) await page.locator('.cart-bar').click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
-  await expect(page.locator('dialog[open] .modal-title')).toHaveText(/RCPT-\d{6}-0001/);
+  await expect(page.locator('dialog[open] .modal-title')).toHaveText(/RCPT-\d{4}-0001/);
   await page.locator('dialog[open]').getByRole('button', { name: 'Done' }).click();
   await page.getByRole('link', { name: 'Reports' }).click();
   await expect(page.locator('.kpi', { hasText: 'Bills' }).locator('.kpi-value')).toHaveText('1');
@@ -217,7 +217,7 @@ test('after Save → Share PDF → Done no dish still looks selected (Clear too)
   await expect(dialog.locator('.r-tagline')).toHaveText('Taste the Flame');
   const head = await dialog.locator('.r-head').evaluate((el) => [...el.children].slice(0, 3).map((c) => c.className));
   expect(head).toEqual(['r-logo', 'r-tagline', 'r-name']); // just below the logo
-  await expect(dialog.getByText(/^✓ Saved as RCPT-\d{6}-\d{4}\. Nothing more to save/)).toBeVisible(); // in the database already
+  await expect(dialog.getByText(/^✓ Saved as RCPT-\d{4}-\d{4}\. Nothing more to save/)).toBeVisible(); // in the database already
   await dialog.getByRole('button', { name: 'Share PDF' }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as Shared).__shared.length)).toBe(1);
   await expect(dialog).toHaveCount(0); // no need to tap Done
@@ -260,9 +260,9 @@ test('Share PDF downloads the receipt where there is no share menu; long bills g
   if (isPhone(page)) await page.locator('.cart-bar').click();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const dialog = page.locator('dialog[open]');
-  await expect(dialog.locator('.modal-title')).toHaveText(/RCPT-\d{6}-0001/);
+  await expect(dialog.locator('.modal-title')).toHaveText(/RCPT-\d{4}-0001/);
   const [download] = await Promise.all([page.waitForEvent('download'), dialog.getByRole('button', { name: 'Share PDF' }).click()]);
-  expect(download.suggestedFilename()).toMatch(/^TikkaBites-RCPT-\d{6}-0001\.pdf$/);
+  expect(download.suggestedFilename()).toMatch(/^TikkaBites-RCPT-\d{4}-0001\.pdf$/);
   const pdf = readFileSync(await download.path(), 'latin1');
   expect(pdf.startsWith('%PDF-1.4')).toBe(true);
   const pages = Number(/\/Count (\d+)/.exec(pdf)![1]);

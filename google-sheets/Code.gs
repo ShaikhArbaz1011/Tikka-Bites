@@ -51,7 +51,8 @@ const TB = {
   BACKUP_CELLS_WARN: 8000000, // a Google Sheet holds at most 10 million cells
   USER_ID_RE: /^[a-z0-9][a-z0-9._-]{1,29}$/,
   UUID_RE: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-  BILL_NO_RE: /^(RCPT|INV)-([0-9]{6})-([0-9]{4,})$/,
+  // RCPT-2026-0001 (one count per year, since 24 Oct 2026), or the older monthly RCPT-202610-0001 / INV-202609-0001.
+  BILL_NO_RE: /^(?:RCPT-([0-9]{4})|(?:RCPT|INV)-([0-9]{6}))-([0-9]{4,})$/,
   OFF_NO_RE: /^OFF-[A-Z0-9]{3,6}-[0-9]{4,}$/,
 };
 
@@ -157,6 +158,21 @@ function timeText(ms) {
 function billsTab(monthKey) {
   return 'Bills ' + monthKey.slice(0, 4) + '-' + monthKey.slice(4);
 }
+/**
+ * A final receipt number's parts: key = where its counter lives (YYYY for the yearly
+ * numbers, YYYYMM for the old monthly ones), month only for the old ones. Null if invalid.
+ */
+function billNoParts(no) {
+  const m = TB.BILL_NO_RE.exec(String(no));
+  if (!m) return null;
+  if (m[1]) return { key: m[1], year: m[1], month: null, seq: Number(m[3]) };
+  return { key: m[2], year: m[2].slice(0, 4), month: m[2], seq: Number(m[3]) };
+}
+/** Does the number fit the bill's month? Same month (old monthly numbers) or same year. */
+function billNoFitsMonth(no, monthKey) {
+  const p = billNoParts(no);
+  return !!p && /^[0-9]{6}$/.test(String(monthKey)) && (p.month ? p.month === monthKey : String(monthKey).slice(0, 4) === p.year);
+}
 function tabMonth(name) {
   const m = /^Bills (\d{4})-(\d{2})$/.exec(name);
   return m ? m[1] + m[2] : null;
@@ -203,11 +219,16 @@ function billCells(r) {
     rupees(b.subtotalPaise), discountText(b.discount), rupees(b.discountPaise), rupees(b.roundOffPaise), rupees(b.totalPaise),
     b.status === 'void' ? 'Void' : 'Paid', b.voidReason || '', typeof b.voidedAt === 'number' ? dayText(b.voidedAt) + ' ' + timeText(b.voidedAt) : '',
     r.by || '', b.printedAs || '', b.cheesyLine || '',
+    typeof b.enteredAt === 'number' ? dayText(b.enteredAt) + ' ' + timeText(b.enteredAt) : '',
   ];
 }
 
 /** Earlier bill-tab headers (oldest first). Tabs with one of these are rebuilt from their Data column (upgradeTab). */
 const OLD_BILL_HEADS = [
+  [
+    'Receipt no', 'Date', 'Time', 'Day', 'Order type', 'Table', 'Customer', 'Payment', 'Items (qty × rate = amount)', 'Item count', 'Categories', 'Veg / Non-veg',
+    'Subtotal ₹', 'Discount', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Voided at', 'Saved by', 'Printed as', 'Receipt line', 'Rev', 'Client ref', 'Data', 'Data 2',
+  ],
   ['Receipt no', 'Date', 'Time', 'Order type', 'Table', 'Customer', 'Payment', 'Items', 'Item count', 'Subtotal ₹', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Saved by', 'Printed as', 'Rev', 'Client ref', 'Data', 'Data 2'],
 ];
 
@@ -249,8 +270,9 @@ const SPECS = {
     head: [
       'Receipt no', 'Date', 'Time', 'Day', 'Order type', 'Table', 'Customer', 'Payment', 'Items (qty × rate = amount)', 'Item count', 'Categories', 'Veg / Non-veg',
       'Subtotal ₹', 'Discount', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Voided at', 'Saved by', 'Printed as', 'Receipt line',
+      'Entered on (if added later)',
     ],
-    fmt: ['@', '@', '@', '@', '@', '@', '@', '@', '@', '0', '@', '@', '0.00', '@', '0.00', '0.00', '0.00', '@', '@', '@', '@', '@', '@'],
+    fmt: ['@', '@', '@', '@', '@', '@', '@', '@', '@', '0', '@', '@', '0.00', '@', '0.00', '0.00', '0.00', '@', '@', '@', '@', '@', '@', '@'],
     rev: true, extra: ['Client ref'], cells: 2, old: OLD_BILL_HEADS,
     key: (r) => r.bill.billNo,
     show: billCells,
@@ -653,11 +675,16 @@ class Db {
   }
 
   findBill(billNo) {
-    const m = TB.BILL_NO_RE.exec(billNo);
-    if (!m) return null;
-    const sh = this.billSheet(m[2], false);
-    const row = sh ? findRow(sh, 1, billNo) : 0;
-    return row ? this.billAt(sh, row) : null;
+    const p = billNoParts(billNo);
+    if (!p) return null;
+    // An old monthly number names its month; a yearly one is in one of that year's month tabs.
+    const tabs = p.month ? [{ name: billsTab(p.month) }] : this.monthTabs().filter((t) => t.month.slice(0, 4) === p.year);
+    for (let i = 0; i < tabs.length; i++) {
+      const sh = this.sheet(tabs[i].name, SPECS.bills, false);
+      const row = sh ? findRow(sh, 1, billNo) : 0;
+      if (row) return this.billAt(sh, row);
+    }
+    return null;
   }
 
   findByRef(ref, fromMonth) {
@@ -671,12 +698,20 @@ class Db {
     return null;
   }
 
-  /** The number on the month's last row (belt and braces next to the Counters tab). */
-  lastSeq(month) {
-    const sh = this.billSheet(month, false);
-    if (!sh || sh.getLastRow() < 2) return 0;
-    const m = TB.BILL_NO_RE.exec(String(sh.getRange(sh.getLastRow(), 1).getValue()));
-    return m ? Number(m[3]) : 0;
+  /**
+   * The highest number of a year so far, from the last row of each of its month tabs (belt and
+   * braces next to the Counters tab): numbers only go up, so a tab's last row holds its highest.
+   */
+  lastSeq(year) {
+    let top = 0;
+    this.monthTabs().forEach((t) => {
+      if (t.month.slice(0, 4) !== year) return;
+      const sh = this.sheet(t.name, SPECS.bills, false);
+      if (!sh || sh.getLastRow() < 2) return;
+      const p = billNoParts(sh.getRange(sh.getLastRow(), 1).getValue());
+      if (p && p.key === year) top = Math.max(top, p.seq);
+    });
+    return top;
   }
 
   addBills(month, items) {
@@ -1198,6 +1233,7 @@ function opSaveBill(db, a, who) {
   const offline = p.offline === true;
   let at = now;
   let printed = null;
+  let entered = null;
   if (offline) {
     const t = txt(p.createdAt) || '';
     if (!/^[0-9]{12,14}$/.test(t)) refuse('Invalid time on an offline bill');
@@ -1207,8 +1243,19 @@ function opSaveBill(db, a, who) {
     if (monthKeyAt(at) < keepFrom) refuse('This offline bill is from a month that has already been cleared (only 3 months are kept).');
     printed = txt(p.printedAs);
     if (printed !== null && !TB.OFF_NO_RE.test(printed)) refuse('Invalid offline bill number');
+    const e = txt(p.enteredAt) || ''; // a back-dated bill made offline: when it was typed in
+    if (/^[0-9]{12,14}$/.test(e) && Number(e) >= at && Number(e) <= now + 600000) entered = Number(e);
+  } else if ('billedAt' in p) {
+    // Entered later for an earlier day of THIS month (owner request, 24 Oct 2026), at today's prices.
+    const b = txt(p.billedAt) || '';
+    if (!/^[0-9]{12,14}$/.test(b)) refuse('Invalid bill date');
+    at = Number(b);
+    if (at > now + 600000) refuse("The bill date can't be in the future.");
+    if (monthKeyAt(at) !== monthKeyAt(now)) refuse('Bills for an earlier date can only be added for this month.');
+    entered = now;
   }
   const month = monthKeyAt(at);
+  const year = month.slice(0, 4);
 
   const menu = {};
   db.all('menu').forEach((r) => {
@@ -1293,18 +1340,19 @@ function opSaveBill(db, a, who) {
 
   // Reserve the numbers first (clock + receipt counter), flushed before the bill is written:
   // a crash after this can only skip a number, never give the same one twice.
-  const counter = db.find('counters', month);
-  const seq = Math.max(counter ? Number(counter.rec.last) || 0 : 0, db.lastSeq(month)) + 1;
-  const billNo = 'RCPT-' + month + '-' + pad(seq, 4);
+  // One count per year (India time): RCPT-2026-0001 …, and RCPT-2027-0001 from 1 January.
+  const counter = db.find('counters', year);
+  const seq = Math.max(counter ? Number(counter.rec.last) || 0 : 0, db.lastSeq(year)) + 1;
+  const billNo = 'RCPT-' + year + '-' + pad(seq, 4);
   const firstRev = db.reserve(used.length + 1);
-  db.put('counters', [{ rec: { monthKey: month, last: seq }, rev: 0 }]);
+  db.put('counters', [{ rec: { monthKey: year, last: seq }, rev: 0 }]);
   SpreadsheetApp.flush();
 
   const t = ist(at);
   const bill = strip({
     billNo, createdAt: at, monthKey: month, hour: t.h, weekday: t.dow, items, orderType: order, tableNo: table, customerName: customer,
     paymentMode: pay, discount, subtotalPaise: sub, discountPaise: discPaise, roundOffPaise: round, totalPaise: total, itemCount: count,
-    categories: cats, hasVeg: veg, hasNonVeg: nonVeg, cheesyLine: cheesy, printedAs: printed, status: 'paid',
+    categories: cats, hasVeg: veg, hasNonVeg: nonVeg, cheesyLine: cheesy, printedAs: printed, status: 'paid', enteredAt: entered,
   });
   if (used.length) db.put('menu', used.map((r, i) => ({ rec: Object.assign({}, r.rec, { used_in_bills: true }), rev: firstRev + i })));
   db.addBills(month, [{ rec: { bill, by: who.username, ref }, rev: firstRev + used.length }]);
@@ -1491,7 +1539,7 @@ function opImportDevice(db, a) {
     return r;
   });
   const counts = counters.map((c) => {
-    if (!isObj(c) || !/^[0-9]{6}$/.test(String(c.monthKey)) || !Number.isInteger(c.last) || c.last < 0) refuse('Invalid receipt counter from the phone');
+    if (!isObj(c) || !/^[0-9]{4}([0-9]{2})?$/.test(String(c.monthKey)) || !Number.isInteger(c.last) || c.last < 0) refuse('Invalid receipt counter from the phone');
     const have = db.find('counters', c.monthKey);
     return { rec: { monthKey: c.monthKey, last: Math.max(c.last, have ? Number(have.rec.last) || 0 : 0) }, rev: 0 };
   });
@@ -1515,8 +1563,8 @@ function opImportBills(db, a, who) {
   const byMonth = {};
   const top = {};
   list.forEach((b) => {
-    const m = isObj(b) ? TB.BILL_NO_RE.exec(String(b.billNo)) : null;
-    if (!m || b.monthKey !== m[2] || (b.status !== 'paid' && b.status !== 'void') || typeof b.createdAt !== 'number') {
+    const parts = isObj(b) ? billNoParts(b.billNo) : null;
+    if (!parts || !billNoFitsMonth(b.billNo, b.monthKey) || (b.status !== 'paid' && b.status !== 'void') || typeof b.createdAt !== 'number') {
       refuse('Invalid bill from the phone: ' + (isObj(b) ? String(b.billNo).slice(0, 30) : '?'));
     }
     if (b.monthKey < keep) return; // only the 3 kept months
@@ -1524,7 +1572,7 @@ function opImportBills(db, a, who) {
     delete bill.sync;
     dataCells(JSON.stringify({ bill, by: who.username, ref: '' }), SPECS.bills.cells, 'Bill ' + b.billNo); // too large? refuse before writing
     (byMonth[b.monthKey] = byMonth[b.monthKey] || []).push(bill);
-    top[b.monthKey] = Math.max(top[b.monthKey] || 0, Number(m[3]));
+    top[parts.key] = Math.max(top[parts.key] || 0, parts.seq);
   });
   const fresh = {};
   let added = 0;
@@ -1903,6 +1951,7 @@ function scan(db, problems) {
   });
   const spec = SPECS.bills;
   const L = layout(spec);
+  const top = {}; // highest number per counter key (year, or month for the old numbers)
   db.monthTabs().forEach((t) => {
     const seen = {};
     out.bills[t.month] = seen;
@@ -1910,7 +1959,6 @@ function scan(db, problems) {
       const sh = db.sheet(t.name, spec, false);
       const last = sh.getLastRow();
       const values = last >= 2 ? sh.getRange(2, 1, last - 1, L.width).getValues() : [];
-      let top = 0;
       values.forEach((v, i) => {
         let p;
         try {
@@ -1924,13 +1972,15 @@ function scan(db, problems) {
         if (seen[no]) problems.push(db.label + ': receipt ' + no + ' appears twice in "' + t.name + '".');
         seen[no] = p.rev + ' ' + JSON.stringify(p.rec);
         maxRev = Math.max(maxRev, p.rev);
-        const m = TB.BILL_NO_RE.exec(no);
-        if (m) top = Math.max(top, Number(m[3]));
+        const n = billNoParts(no);
+        if (n) top[n.key] = Math.max(top[n.key] || 0, n.seq);
       });
-      if (top > (counters[t.month] || 0)) problems.push(db.label + ': the receipt counter for ' + t.month + ' is behind (' + (counters[t.month] || 0) + ' < ' + top + ').');
     } catch (e) {
       problems.push(e.message);
     }
+  });
+  Object.keys(top).forEach((k) => {
+    if (top[k] > (counters[k] || 0)) problems.push(db.label + ': the receipt counter for ' + k + ' is behind (' + (counters[k] || 0) + ' < ' + top[k] + ').');
   });
   if (maxRev > clock) problems.push(db.label + ': the change counter is behind (' + clock + ' < ' + maxRev + ').');
   return out;
@@ -2314,18 +2364,22 @@ function sbPrepare(page) {
   }
   Object.keys(small).forEach((kind) => small[kind].forEach((x) => buildRow(SPECS[kind], x.rec, x.rev, SPECS[kind].tab))); // too large? refuse now
   const months = {};
+  const tops = {};
   page.bills.forEach((x) => {
     const no = isObj(x) ? String(x.no || (isObj(x.bill) && x.bill.billNo) || '') : '';
-    const m = TB.BILL_NO_RE.exec(no);
-    if (!m || !isObj(x.bill)) throw sbBad('a bill (' + no.slice(0, 30) + ')');
+    const n = billNoParts(no);
+    if (!n || !isObj(x.bill)) throw sbBad('a bill (' + no.slice(0, 30) + ')');
+    // Its month tab: an old monthly number names it; for a yearly one the bill says it (monthKey).
+    const mk = n.month || String(x.bill.monthKey || '');
+    if (!billNoFitsMonth(no, mk)) throw sbBad('a bill (' + no.slice(0, 30) + ')');
     const bill = x.bill.billNo === no ? x.bill : Object.assign({}, x.bill, { billNo: no });
     const rec = { bill, by: typeof x.by === 'string' ? x.by : '', ref: typeof x.ref === 'string' ? x.ref : '' };
-    const mo = (months[m[2]] = months[m[2]] || { keys: [], rows: [], top: 0 });
+    const mo = (months[mk] = months[mk] || { keys: [], rows: [] });
     mo.keys.push(no);
     mo.rows.push(buildRow(SPECS.bills, rec, Number(x.rev) || 0, 'Bill ' + no));
-    mo.top = Math.max(mo.top, Number(m[3]));
+    tops[n.key] = Math.max(tops[n.key] || 0, n.seq);
   });
-  return { small, months };
+  return { small, months, tops };
 }
 
 /** Write one checked page. The change number goes in last: it means "copied up to here". */
@@ -2335,9 +2389,9 @@ function sbApply(db, prep, page) {
     const x = prep.months[mk];
     upsertValues(db.billSheet(mk, true), SPECS.bills, x.keys, x.rows);
   });
-  db.put('counters', Object.keys(prep.months).map((mk) => {
-    const have = db.find('counters', mk);
-    return { rec: { monthKey: mk, last: Math.max(prep.months[mk].top, have ? Number(have.rec.last) || 0 : 0) }, rev: 0 };
+  db.put('counters', Object.keys(prep.tops).map((k) => {
+    const have = db.find('counters', k);
+    return { rec: { monthKey: k, last: Math.max(prep.tops[k], have ? Number(have.rec.last) || 0 : 0) }, rev: 0 };
   }));
   db.setMeta({ rev: Math.max(db.clock(), Number(page.rev)), dbId: page.dbId });
 }

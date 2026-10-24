@@ -4,6 +4,7 @@ import { vegMark } from '../components/vegMark';
 import { segmented, textInput } from '../components/form';
 import { toast } from '../components/toast';
 import { Cart, parseDraft } from './cartState';
+import { billDateField } from './billDate';
 import { getMenu, onMenuChange, searchDishes, type IndexedDish } from '../../state/menuStore';
 import { getSettings, getMeta, setMeta } from '../../db/settingsRepo';
 import { saveBill, BillError } from '../../db/billRepo';
@@ -52,6 +53,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
   discInput.setAttribute('aria-describedby', 'disc-err');
   const customer = textInput({ maxlength: v.LIMITS.customerName, placeholder: 'Customer name (optional)', 'aria-label': 'Customer name', value: cart.data.customerName });
   const payment = segmented('payment', 'Payment mode', [['cash', 'Cash'], ['upi', 'UPI']], cart.data.paymentMode);
+  const billDate = billDateField();
 
   const tSubtotal = h('dd', {});
   const tDiscount = h('dd', {});
@@ -86,6 +88,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
         discError,
         customer,
         h('div', { class: 'pay-row' }, h('span', { class: 'field-label', text: 'Payment' }), payment.el),
+        billDate.el,
       ),
     ),
     h('div', { class: 'panel-foot' }, totals, h('div', { class: 'panel-actions' }, saveBtn, printBtn)),
@@ -350,6 +353,11 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
       discInput.focus();
       return;
     }
+    const billedAt = billDate.billedAt();
+    if (billedAt === null) {
+      toast(billDate.problem, 'error', 6000);
+      return;
+    }
     saving = true;
     saveBtn.disabled = printBtn.disabled = true;
     try {
@@ -361,6 +369,7 @@ export async function mount(root: HTMLElement): Promise<Cleanup> {
         customerName: d.customerName,
         paymentMode: d.paymentMode,
         discount,
+        ...(billedAt !== undefined ? { billedAt } : {}),
       });
       cart.reset();
       syncInputs();

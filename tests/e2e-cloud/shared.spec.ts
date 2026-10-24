@@ -60,7 +60,7 @@ test('shared database: sign-in, setup, two phones, offline bill, fingerprint, vo
   expect(psql('select count(*) from public.menu')).toBe('40'); // really in the shared database
 
   const first = await billOne(p1, 'Chicken Tikka Wrap');
-  expect(first.no).toMatch(/^RCPT-\d{6}-0001$/); // numbered by the server
+  expect(first.no).toMatch(/^RCPT-\d{4}-0001$/); // numbered by the server
   await first.dialog.getByRole('button', { name: 'Done' }).click();
 
   // ---------- Phone 2: a counter phone ----------
@@ -93,7 +93,7 @@ test('shared database: sign-in, setup, two phones, offline bill, fingerprint, vo
   await ctx2.setOffline(false);
   await expect(pill(p2)).toHaveText('Synced', { timeout: 30_000 });
   const finalNo = psql(`select bill_no from public.bills where data->>'printedAs' = '${off.no}'`);
-  expect(finalNo).toMatch(/^RCPT-\d{6}-0002$/);
+  expect(finalNo).toMatch(/^RCPT-\d{4}-0002$/);
   await p2.getByRole('link', { name: 'Reports', exact: true }).click();
   const row = p2.locator('.bill-row', { hasText: finalNo });
   await expect(row).toBeVisible();

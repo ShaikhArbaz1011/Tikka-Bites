@@ -46,15 +46,16 @@ class FakeSupabase {
   setSettings(data: Record<string, unknown>) {
     this.settings = { data, rev: ++this.rev };
   }
-  /** Like save_bill: the next number of that month. */
-  save(month: string, extra: Partial<Bill> = {}, by = 'owner') {
-    const n = (this.counter.get(month) ?? 0) + 1;
-    this.counter.set(month, n);
-    const no = `RCPT-${month}-${String(n).padStart(4, '0')}`;
+  /** Like save_bill: the next number of that year (RCPT-2026-0001); `monthly` makes an old-style RCPT-202610-0001. */
+  save(month: string, extra: Partial<Bill> = {}, by = 'owner', monthly = false) {
+    const key = monthly ? month : month.slice(0, 4);
+    const n = (this.counter.get(key) ?? 0) + 1;
+    this.counter.set(key, n);
+    const no = `RCPT-${key}-${String(n).padStart(4, '0')}`;
     const y = Number(month.slice(0, 4));
     const m = Number(month.slice(4)) - 1;
     const bill: Bill = {
-      billNo: no, createdAt: Date.UTC(y, m, 5, 8, 0) + n * 60_000, orderType: 'takeaway', paymentMode: 'cash', status: 'paid',
+      billNo: no, monthKey: month, createdAt: Date.UTC(y, m, 5, 8, 0) + n * 60_000, orderType: 'takeaway', paymentMode: 'cash', status: 'paid',
       items: [{ menuId: 1, name: 'Full Chicken', category: 'Grill Gali', isVeg: false, unitPaise: 45000, qty: 1, linePaise: 45000 }],
       itemCount: 1, subtotalPaise: 45000, discountPaise: 0, roundOffPaise: 0, totalPaise: 45000, cheesyLine: '', ...extra,
     };
@@ -216,11 +217,7 @@ describe('Supabase backup: copying', () => {
     expect(report[0]).toBe(`Copied from Supabase: 12 new or changed bills (up to change ${sb.rev}).`);
     expect(report).toContain('Checked: all 12 bills Supabase has are in the sheet.');
     expect(report).toContain('Check: no damaged rows.');
-    expect(g.records(file(), 'Counters')).toEqual([
-      { monthKey: '202608', last: 3 },
-      { monthKey: '202609', last: 4 },
-      { monthKey: '202610', last: 5 },
-    ]);
+    expect(g.records(file(), 'Counters')).toEqual([{ monthKey: '2026', last: 12 }]); // one count for the year
     expect(g.records(file(), 'Meta')).toContainEqual({ key: 'rev', value: sb.rev });
     expect(g.rt.props.get('SB_REV')).toBe(String(sb.rev));
     expect(g.rt.props.get('SB_ERROR')).toBe('');
@@ -228,7 +225,7 @@ describe('Supabase backup: copying', () => {
     expect(file().getSheets()[1]!.getName()).toBe('Bills 2026-10');
     expect(billsIn(file(), '202610').map((x) => x.by)).toEqual(['owner', 'counter1', 'owner', 'counter1', 'owner']);
     const row = g.rows(file(), 'Bills 2026-10')[0]!;
-    expect(row.slice(0, 3)).toEqual(['RCPT-202610-0001', '05-10-2026', '13:31']);
+    expect(row.slice(0, 3)).toEqual(['RCPT-2026-0008', '05-10-2026', '13:38']); // Aug 1–3, Sep 4–7, Oct 8–12
     expect(row[16]).toBe(450); // Total ₹
     // It sent only the public key and the backup key, and asked from the start.
     const sent = g.rt.fetches[0]!;
@@ -242,7 +239,7 @@ describe('Supabase backup: copying', () => {
     setUp();
     run();
     const before = sb.rev;
-    sb.void('RCPT-202610-0002', 'Wrong table');
+    sb.void('RCPT-2026-0009', 'Wrong table');
     sb.save('202610');
     sb.dish(1, 'Full Chicken', 48000); // price change
     const report = run();
@@ -252,7 +249,7 @@ describe('Supabase backup: copying', () => {
     const rows = g.rows(file(), 'Bills 2026-10');
     expect(rows).toHaveLength(6);
     expect(rows[1]!.slice(17, 19)).toEqual(['Void', 'Wrong table']);
-    expect(g.records(file(), 'Counters').find((c: any) => c.monthKey === '202610')).toEqual({ monthKey: '202610', last: 6 });
+    expect(g.records(file(), 'Counters')).toEqual([{ monthKey: '2026', last: 13 }]);
     // Nothing new: one quick call, nothing written.
     const snap = g.snapshot(file());
     expect(run()[0]).toBe(`Copied from Supabase: 0 new or changed bills (up to change ${sb.rev}).`);
@@ -333,7 +330,7 @@ describe('Supabase backup: when something goes wrong', () => {
       g.rt.fetch = sb.handler;
       shop();
       setUp();
-      sb.void('RCPT-202609-0002', 'Test');
+      sb.void('RCPT-2026-0005', 'Test');
       g.rt.writes = 0;
       g.rt.failAfter = k;
       let crashed = false;
@@ -409,14 +406,29 @@ describe('Supabase backup: when something goes wrong', () => {
     expect(g.snapshot(old)).toEqual(oldSnap);
   });
 
+  it('old monthly numbers and yearly ones side by side; a yearly bill goes to its own month tab; back-dated bills show when they were entered', () => {
+    sb.save('202609', {}, 'owner', true); // RCPT-202609-0001, from before 24 Oct 2026
+    sb.save('202609'); // RCPT-2026-0001
+    sb.save('202610', { enteredAt: Date.UTC(2026, 9, 12, 9, 0) }); // RCPT-2026-0002, typed in on 12 Oct
+    setUp();
+    expect(run()).toContain('Checked: all 3 bills Supabase has are in the sheet.');
+    expect(billsIn(file(), '202609').map((x) => x.bill.billNo)).toEqual(['RCPT-202609-0001', 'RCPT-2026-0001']);
+    expect(billsIn(file(), '202610').map((x) => x.bill.billNo)).toEqual(['RCPT-2026-0002']);
+    expect(g.records(file(), 'Counters')).toEqual([{ monthKey: '2026', last: 2 }, { monthKey: '202609', last: 1 }]);
+    const head = file().getSheetByName('Bills 2026-10')!.dump()[0]!;
+    const row = g.rows(file(), 'Bills 2026-10')[0]!;
+    expect(row[head.indexOf('Entered on (if added later)')]).toBe('12-10-2026 14:30');
+    expect(g.rows(file(), 'Bills 2026-09')[0]![head.indexOf('Entered on (if added later)')]).toBe('');
+  });
+
   it('a bill whose data lost its number is filed under the number Supabase keeps', () => {
     sb.save('202610');
-    const b = sb.bills.get('RCPT-202610-0001')!;
+    const b = sb.bills.get('RCPT-2026-0001')!;
     const { billNo: _no, ...rest } = b.bill;
     b.bill = rest as Bill;
     setUp();
     run();
-    expect(billsIn(file(), '202610')[0]!.bill.billNo).toBe('RCPT-202610-0001');
+    expect(billsIn(file(), '202610')[0]!.bill.billNo).toBe('RCPT-2026-0001');
   });
 });
 
@@ -443,7 +455,7 @@ function toOldLayout(ss: FakeSpreadsheet, tabName: string) {
 describe('Supabase backup: the sheet made with the older columns (live since 12 Oct 2026)', () => {
   it('each month tab is rebuilt with every field in its own column, from the trusted Data copy; nothing lost or doubled', () => {
     shop();
-    sb.void('RCPT-202609-0002', 'Wrong table');
+    sb.void('RCPT-2026-0005', 'Wrong table');
     setUp();
     run();
     toOldLayout(file(), 'Bills 2026-09');
@@ -459,8 +471,8 @@ describe('Supabase backup: the sheet made with the older columns (live since 12 
     const head = file().getSheetByName('Bills 2026-09')!.dump()[0]!;
     expect(head.slice(0, 4)).toEqual(['Receipt no', 'Date', 'Time', 'Day']);
     expect(head).toContain('Receipt line');
-    const voided = g.rows(file(), 'Bills 2026-09').find((r) => r[0] === 'RCPT-202609-0002')!;
-    expect([voided[0], voided[17], voided[18]]).toEqual(['RCPT-202609-0002', 'Void', 'Wrong table']);
+    const voided = g.rows(file(), 'Bills 2026-09').find((r) => r[0] === 'RCPT-2026-0005')!;
+    expect([voided[0], voided[17], voided[18]]).toEqual(['RCPT-2026-0005', 'Void', 'Wrong table']);
     expect(voided[8]).toBe('1 × Full Chicken @ ₹450 = ₹450');
   });
 
@@ -530,9 +542,9 @@ describe.skipIf(!hasPg)('Supabase backup against the real SQL (local PostgreSQL)
     const report = run();
     const stored = JSON.parse(psql(`select coalesce(jsonb_agg(data order by bill_no), '[]') from public.bills;`).out) as Bill[];
     expect(stored.length).toBeGreaterThan(3);
-    const month = stored[0]!.billNo.slice(5, 11);
+    const month = stored[0]!.monthKey as string;
     const got = billsIn(file(), month).map((x) => x.bill).sort((a, b) => a.billNo.localeCompare(b.billNo));
-    expect(got).toEqual(stored.filter((b) => b.billNo.slice(5, 11) === month));
+    expect(got).toEqual(stored.filter((b) => b.monthKey === month));
     expect(report).toContain(`Checked: all ${stored.length} bills Supabase has are in the sheet.`);
     expect(g.records(file(), 'Menu').length).toBe(Number(psql('select count(*) from public.menu;').out));
 

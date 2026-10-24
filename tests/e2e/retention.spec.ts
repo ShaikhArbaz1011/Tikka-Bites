@@ -41,11 +41,11 @@ test('keeps 3 months: warns before, then deletes exactly the oldest month on the
   await page.getByRole('button', { name: /Load Tikka Bites menu/ }).click();
   await expect(page.locator('.dish-row')).toHaveCount(40);
 
-  expect(await billAt(page, '2026-06-20T13:00:00')).toBe('RCPT-202606-0001');
-  expect(await billAt(page, '2026-07-20T13:00:00')).toBe('RCPT-202607-0001');
-  expect(await billAt(page, '2026-08-10T13:00:00')).toBe('RCPT-202608-0001');
-  expect(await billAt(page, '2026-08-11T13:00:00')).toBe('RCPT-202608-0002');
-  expect(await billAt(page, '2026-09-20T13:00:00')).toBe('RCPT-202609-0001');
+  expect(await billAt(page, '2026-06-20T13:00:00')).toBe('RCPT-2026-0001');
+  expect(await billAt(page, '2026-07-20T13:00:00')).toBe('RCPT-2026-0002');
+  expect(await billAt(page, '2026-08-10T13:00:00')).toBe('RCPT-2026-0003');
+  expect(await billAt(page, '2026-08-11T13:00:00')).toBe('RCPT-2026-0004');
+  expect(await billAt(page, '2026-09-20T13:00:00')).toBe('RCPT-2026-0005');
 
   // ---- 30 September, 23:50: June is past the limit; July goes tomorrow ----
   await page.clock.setFixedTime(IST('2026-09-30T23:50:00'));
@@ -58,20 +58,20 @@ test('keeps 3 months: warns before, then deletes exactly the oldest month on the
   const path = test.info().outputPath('july.xlsx');
   await download.saveAs(path);
   const bills = cells(unzip(new Uint8Array(readFileSync(path))).get('xl/worksheets/sheet2.xml')!);
-  expect([bills['A2'], bills['A3']]).toEqual(['RCPT-202607-0001', undefined]); // July's one bill
+  expect([bills['A2'], bills['A3']]).toEqual(['RCPT-2026-0002', undefined]); // July's one bill
 
   expect(await billsIn(page, '2026-06-01', '2026-06-30')).toEqual([]); // June already deleted
-  expect(await billsIn(page, '2026-07-01', '2026-09-30')).toEqual(['RCPT-202609-0001', 'RCPT-202608-0002', 'RCPT-202608-0001', 'RCPT-202607-0001']);
+  expect(await billsIn(page, '2026-07-01', '2026-09-30')).toEqual(['RCPT-2026-0005', 'RCPT-2026-0004', 'RCPT-2026-0003', 'RCPT-2026-0002']);
 
   // ---- 1 October, 00:05: exactly July is deleted ----
   await page.clock.setFixedTime(IST('2026-10-01T00:05:00'));
   await page.reload();
   await expect(page.locator('.nav-link').first()).toBeVisible();
   expect(await billsIn(page, '2026-07-01', '2026-07-31')).toEqual([]);
-  expect(await billsIn(page, '2026-08-01', '2026-09-30')).toEqual(['RCPT-202609-0001', 'RCPT-202608-0002', 'RCPT-202608-0001']);
+  expect(await billsIn(page, '2026-08-01', '2026-09-30')).toEqual(['RCPT-2026-0005', 'RCPT-2026-0004', 'RCPT-2026-0003']);
   await expect(page.locator('.banner', { hasText: 'will be deleted' })).toHaveCount(0); // not the last week any more
 
   // New bills in October start at 0001; kept months are untouched.
-  expect(await billAt(page, '2026-10-01T00:10:00')).toBe('RCPT-202610-0001');
+  expect(await billAt(page, '2026-10-01T00:10:00')).toBe('RCPT-2026-0006'); // the year's count carries on after the clean-up
   expect(errors).toEqual([]);
 });

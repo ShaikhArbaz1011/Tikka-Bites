@@ -207,7 +207,7 @@ export function countersFor(stored: Counter[], bills: Bill[]): Counter[] {
   const last = new Map(stored.map((c) => [c.monthKey, c.last]));
   for (const b of bills) {
     const p = parseBillNo(b.billNo);
-    if (p && p.seq > (last.get(p.monthKey) ?? 0)) last.set(p.monthKey, p.seq);
+    if (p && p.seq > (last.get(p.counterKey) ?? 0)) last.set(p.counterKey, p.seq);
   }
   return [...last].map(([monthKey, n]) => ({ monthKey, last: n }));
 }

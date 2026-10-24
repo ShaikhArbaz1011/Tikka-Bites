@@ -4,7 +4,7 @@
  * bill arithmetic is re-verified, so a tampered or corrupt file can't get in.
  */
 import { MAX_PRICE_PAISE, MAX_BP } from './money';
-import { BILL_NO_RE, OFFLINE_NO_RE } from './billNo';
+import { BILL_NO_RE, OFFLINE_NO_RE, billNoMatchesMonth } from './billNo';
 import { discountAmount, type Discount } from './totals';
 import { LIMITS } from './validate';
 import type { Bill, BillItem, CheesyLine, Dish, Settings } from '../db/types';
@@ -118,6 +118,7 @@ function checkDish(v: unknown, p: string): number {
   int(o['pricePaise'], `${p}.pricePaise`, 1, MAX_PRICE_PAISE);
   for (const k of ['isVeg', 'active', 'deleted', 'usedInBills']) bool(o[k], `${p}.${k}`);
   int(o['createdAt'], `${p}.createdAt`, 0, MAX_TIME);
+  if ('enteredAt' in o) int(o['enteredAt'], `${p}.enteredAt`, 0, MAX_TIME);
   int(o['updatedAt'], `${p}.updatedAt`, 0, MAX_TIME);
   return id;
 }
@@ -153,16 +154,15 @@ const BILL_REQUIRED = [
 ];
 
 function checkBill(v: unknown, p: string): string {
-  const o = obj(v, p, BILL_REQUIRED, ['tableNo', 'customerName', 'voidReason', 'voidedAt', 'printedAs', 'sync']);
+  const o = obj(v, p, BILL_REQUIRED, ['tableNo', 'customerName', 'voidReason', 'voidedAt', 'printedAs', 'sync', 'enteredAt']);
   const billNo = str(o['billNo'], `${p}.billNo`, 1, 30);
-  const m = BILL_NO_RE.exec(billNo);
-  if (m) {
-    if (o['monthKey'] !== `${m[1]}${m[2]}`) fail(`${p}.monthKey`, 'does not match bill number');
+  if (BILL_NO_RE.test(billNo)) {
+    if (typeof o['monthKey'] !== 'string' || !billNoMatchesMonth(billNo, o['monthKey'])) fail(`${p}.monthKey`, 'does not match bill number');
   } else if (OFFLINE_NO_RE.test(billNo)) {
     // Made offline (shared database), not uploaded yet: the number is temporary.
     if (typeof o['monthKey'] !== 'string' || !/^\d{6}$/.test(o['monthKey'])) fail(`${p}.monthKey`, 'must be YYYYMM');
     if (!('sync' in o)) fail(`${p}.sync`, 'an offline bill must say it is waiting to upload');
-  } else fail(`${p}.billNo`, 'is not in RCPT-YYYYMM-0001 format');
+  } else fail(`${p}.billNo`, 'is not in RCPT-YYYY-0001 format');
   if ('printedAs' in o && !OFFLINE_NO_RE.test(str(o['printedAs'], `${p}.printedAs`, 1, 30))) fail(`${p}.printedAs`, 'is not an OFF- number');
   if ('sync' in o) {
     const sy = obj(o['sync'], `${p}.sync`, ['clientRef'], ['error']);

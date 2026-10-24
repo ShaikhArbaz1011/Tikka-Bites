@@ -271,6 +271,7 @@ function layout(ctx: Ctx, bill: Bill, s: Settings, logo: HTMLImageElement | null
     ['Date', formatDateTime(bill.createdAt)],
     ['Order', orderLine(bill)],
   ];
+  if (bill.enteredAt !== undefined) meta.splice(2, 0, ['Entered', formatDateTime(bill.enteredAt)]); // added later for an earlier date
   if (bill.customerName) meta.push(['Customer', bill.customerName]);
   const labelW = Math.max(...meta.map(([label]) => measure(ctx, label, T.body)));
   const metaRows = meta.map(([label, value]) => ({ label, lines: wrap(ctx, value, W - labelW - GAP, T.body) }));

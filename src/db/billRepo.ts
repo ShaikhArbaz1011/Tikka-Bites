@@ -1,7 +1,7 @@
 import { getDB, SETTINGS_KEY, DEFAULT_SETTINGS } from './db';
 import { ORDER_TYPES, PAYMENT_MODES, type Bill, type BillItem, type OrderType, type PaymentMode, type MonthlyStats } from './types';
 import { computeTotals, type Discount } from '../core/totals';
-import { monthKeyOf, nextBillNo } from '../core/billNo';
+import { monthKeyOf, nextBillNo, yearKeyOf } from '../core/billNo';
 import { draw, type BagState } from '../core/shuffleBag';
 import { applyBill, emptyStats } from '../core/stats';
 import { isQty, cleanText, LIMITS } from '../core/validate';
@@ -19,11 +19,22 @@ export interface BillDraft {
   customerName?: string;
   paymentMode: PaymentMode;
   discount: Discount;
+  /** A bill forgotten earlier this month: its date and time (owner request, 24 Oct 2026). Leave out for "now". */
+  billedAt?: number;
+}
+
+/** A back-dated bill must be from earlier this month, never the future. Returns undefined for "now". */
+export function checkBilledAt(billedAt: number | undefined, now: number): number | undefined {
+  if (billedAt === undefined) return undefined;
+  if (!Number.isSafeInteger(billedAt) || billedAt < 0) throw new BillError('Invalid bill date');
+  if (billedAt > now + 60_000) throw new BillError("The bill date can't be in the future");
+  if (monthKeyOf(billedAt) !== monthKeyOf(now)) throw new BillError('Bills for an earlier date can only be added for this month');
+  return now - billedAt < 60_000 ? undefined : billedAt; // within a minute of now: just a normal bill
 }
 
 export const FALLBACK_LINE = 'Thank you! Visit again 😊';
 
-export function validateDraft(d: BillDraft): BillDraft {
+export function validateDraft(d: BillDraft, now: number = Date.now()): BillDraft {
   if (!Array.isArray(d.items) || d.items.length === 0) throw new BillError('Add at least one item');
   // Merge duplicate lines for the same dish.
   const merged = new Map<number, number>();
@@ -47,6 +58,7 @@ export function validateDraft(d: BillDraft): BillDraft {
     customerName,
     paymentMode: d.paymentMode,
     discount: disc,
+    billedAt: checkBilledAt(d.billedAt, now),
   };
 }
 
@@ -56,7 +68,7 @@ export function validateDraft(d: BillDraft): BillDraft {
  * If anything fails, nothing is written, and bill numbers can never repeat.
  */
 export async function saveBill(input: BillDraft, now: number = Date.now()): Promise<Bill> {
-  const draft = validateDraft(input);
+  const draft = validateDraft(input, now);
   const cloud = cloudHooks();
   if (cloud) return cloud.saveBill(draft, now); // shared database: numbered by the server
   const db = await getDB();
@@ -84,12 +96,14 @@ export async function saveBill(input: BillDraft, now: number = Date.now()): Prom
     }
     const totals = computeTotals(items, draft.discount, settings.roundOff);
 
-    // Next bill number for this month.
-    const monthKey = monthKeyOf(now);
+    // The bill's own time (a back-dated bill keeps its date); the next number of that year.
+    const at = draft.billedAt ?? now;
+    const monthKey = monthKeyOf(at);
+    const year = yearKeyOf(at);
     const counters = tx.objectStore('counters');
-    const counter = await counters.get(monthKey);
-    const { billNo, seq } = nextBillNo(monthKey, counter?.last);
-    await counters.put({ monthKey, last: seq });
+    const counter = await counters.get(year);
+    const { billNo, seq } = nextBillNo(year, counter?.last);
+    await counters.put({ monthKey: year, last: seq });
 
     // Cheesy line from the shuffle bag.
     const lines = (await tx.objectStore('cheesyLines').getAll()).filter((l) => l.active);
@@ -99,10 +113,10 @@ export async function saveBill(input: BillDraft, now: number = Date.now()): Prom
     await meta.put(pick.state, 'shuffleBag');
     const cheesyLine = lines.find((l) => l.id === pick.id)?.text ?? FALLBACK_LINE;
 
-    const date = new Date(now);
+    const date = new Date(at);
     const bill: Bill = {
       billNo,
-      createdAt: now,
+      createdAt: at,
       monthKey,
       hour: date.getHours(),
       weekday: date.getDay(),
@@ -122,6 +136,7 @@ export async function saveBill(input: BillDraft, now: number = Date.now()): Prom
       hasNonVeg: items.some((i) => !i.isVeg),
       cheesyLine,
       status: 'paid',
+      ...(draft.billedAt !== undefined ? { enteredAt: now } : {}),
     };
     await tx.objectStore('bills').add(bill); // add() rejects a duplicate key
 

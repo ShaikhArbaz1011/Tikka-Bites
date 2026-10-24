@@ -51,7 +51,7 @@ begin
     'items', jsonb_build_array(jsonb_build_object('menuId', 3, 'qty', 2, 'unitPaise', price, 'name', 'Sweet Lassi', 'category', 'Thanda Matter', 'isVeg', true)),
     'orderType', 'takeaway', 'paymentMode', 'upi', 'discount', jsonb_build_object('kind', 'flat', 'paise', 0),
     'roundOffPaise', 0, 'totalPaise', 2 * price, 'cheesyLine', ''));
-  assert b ->> 'billNo' = 'RCPT-' || m1 || '-0001', 'numbered in LAST month (the sale month): ' || (b ->> 'billNo');
+  assert b ->> 'billNo' like 'RCPT-' || left(m1, 4) || '-%', 'numbered in the year of the sale: ' || (b ->> 'billNo');
   assert b ->> 'monthKey' = m1 and (b ->> 'createdAt')::bigint = at_ms, 'sale time kept';
   assert (b ->> 'hour')::int = 23, 'hour of the sale, India time';
   assert (b -> 'items' -> 0 ->> 'unitPaise')::int = price and b -> 'items' -> 0 ->> 'name' = 'Sweet Lassi', 'price and name as printed';
@@ -122,8 +122,9 @@ begin
 end $$;
 reset role;
 do $$ begin
-  assert not exists (select 1 from public.counters where month_key < public.keep_from_month()), 'old counters removed';
+  assert not exists (select 1 from public.counters where char_length(month_key) = 6 and month_key < public.keep_from_month()), 'old month counters removed';
   assert exists (select 1 from public.counters where month_key = public.keep_from_month()), 'kept month counter stays';
+  assert exists (select 1 from public.counters where month_key = to_char(now() at time zone 'Asia/Kolkata', 'YYYY')), 'this year''s counter stays';
 end $$;
 -- The nightly job runs with no signed-in user: allowed.
 select set_config('request.jwt.claims', '', false) \g :devnull

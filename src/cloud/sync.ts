@@ -63,6 +63,7 @@ export function offlinePayload(b: Bill): Record<string, unknown> {
     roundOffPaise: b.roundOffPaise,
     totalPaise: b.totalPaise,
     cheesyLine: b.cheesyLine,
+    ...(b.enteredAt !== undefined ? { enteredAt: b.enteredAt } : {}),
   };
 }
 

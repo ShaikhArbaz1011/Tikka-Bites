@@ -138,7 +138,7 @@ describe('billing with the Google Sheet', () => {
   it('online: the sheet numbers the bill; it is in Main and Backup; the phone keeps it', async () => {
     await setUpAsOwner();
     const b = await saveBill(draft, T0);
-    expect(b.billNo).toBe(`RCPT-${M}-0001`);
+    expect(b.billNo).toBe(`RCPT-${M.slice(0, 4)}-0001`);
     expect(b.sync).toBeUndefined();
     expect(await getBill(b.billNo)).toMatchObject({ totalPaise: 90000 });
     expect(sheetBills().map((x) => x.billNo)).toEqual([b.billNo]);
@@ -171,7 +171,7 @@ describe('billing with the Google Sheet', () => {
     await expect(saveBill(draft, T0)).rejects.toThrow('changed on another device');
     await syncNow();
     expect((await listMenu())[0]?.pricePaise).toBe(47000);
-    expect((await saveBill(draft, T0)).billNo).toBe(`RCPT-${M}-0001`);
+    expect((await saveBill(draft, T0)).billNo).toBe(`RCPT-${M.slice(0, 4)}-0001`);
   });
 
   it('bills, voids and menu changes from other phones arrive with the next sync', async () => {
@@ -238,8 +238,9 @@ describe('moving from Supabase to the Google Sheet', () => {
 
   it('the upload sends counters raised to the phone’s highest receipt numbers (so new bills never collide)', () => {
     const bill = (billNo: string) => ({ billNo }) as Bill;
-    expect(countersFor([{ monthKey: '202609', last: 3 }], [bill('RCPT-202609-0009'), bill('INV-202608-0002'), bill('OFF-K7Q-0001')])).toEqual([
+    expect(countersFor([{ monthKey: '202609', last: 3 }, { monthKey: '2026', last: 4 }], [bill('RCPT-202609-0009'), bill('INV-202608-0002'), bill('RCPT-2026-0011'), bill('OFF-K7Q-0001')])).toEqual([
       { monthKey: '202609', last: 9 },
+      { monthKey: '2026', last: 11 },
       { monthKey: '202608', last: 2 },
     ]);
   });

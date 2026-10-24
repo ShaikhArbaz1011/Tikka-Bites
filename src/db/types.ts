@@ -65,6 +65,8 @@ export interface Bill {
   status: 'paid' | 'void';
   voidReason?: string;
   voidedAt?: number;
+  /** Added later for an earlier date of the same month (owner request, 24 Oct 2026): when it was typed in. createdAt is the bill's own date. */
+  enteredAt?: number;
 }
 
 export interface Settings {
@@ -118,6 +120,7 @@ export interface MonthlyStats extends Stats {
   monthKey: string;
 }
 
+/** Last receipt number used. Keyed by year (YYYY) since 24 Oct 2026; old month keys (YYYYMM) belong to the old monthly numbers. */
 export interface Counter {
   monthKey: string;
   last: number;
