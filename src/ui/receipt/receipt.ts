@@ -46,6 +46,7 @@ export function buildReceipt(bill: Bill, s: Settings, width: ReceiptWidth): HTML
       'div',
       { class: 'r-meta' },
       row('Receipt No', bill.billNo),
+      bill.oldNo ? row('Old no.', bill.oldNo) : null, // its number moved up when a bill for an earlier time was added
       bill.printedAs ? row('Printed as', bill.printedAs) : null,
       bill.sync && bill.status === 'paid' ? h('div', { class: 'r-offline', text: 'Made offline: final receipt number is given when this phone is back online.' }) : null,
       row('Date', formatDateTime(bill.createdAt)),

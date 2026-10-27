@@ -34,6 +34,8 @@ class FakeSupabase {
   settings: { data: Record<string, unknown>; rev: number } | null = null;
   bills = new Map<string, { no: string; bill: Bill; by: string | null; ref: string | null; rev: number; month: string }>();
   counter = new Map<string, number>();
+  renumberRev = 0;
+  keepFrom = '202608';
   calls = 0;
   onCall: (() => void) | null = null;
 
@@ -70,6 +72,18 @@ class FakeSupabase {
   purgeBefore(month: string) {
     for (const [no, b] of this.bills) if (b.month < month) this.bills.delete(no);
   }
+  /** Like renumber_year_by_date: one series in date order; a bill whose number changes keeps it as oldNo. */
+  renumberYear(year: string) {
+    const list = [...this.bills.values()].filter((b) => b.month.startsWith(year)).sort((a, b) => a.bill.createdAt - b.bill.createdAt);
+    for (const b of list) this.bills.delete(b.no);
+    list.forEach((b, i) => {
+      const no = `RCPT-${year}-${String(i + 1).padStart(4, '0')}`;
+      const bill = no === b.no ? b.bill : { ...b.bill, billNo: no, oldNo: (b.bill['oldNo'] as string | undefined) ?? b.no };
+      this.bills.set(no, { ...b, no, bill, rev: ++this.rev });
+    });
+    this.counter.set(year, list.length);
+    this.renumberRev++;
+  }
   pull(key: string, since: number, limit: number) {
     if (!this.keyHash || (key?.length ?? 0) < 32 || sha256(key) !== this.keyHash) throw new Error('Wrong backup key.');
     const ch: { rev: number; kind: string; row: unknown }[] = [];
@@ -88,6 +102,8 @@ class FakeSupabase {
       settings: page.find((x) => x.kind === 'settings')?.row ?? null,
       bills: page.filter((x) => x.kind === 'bills').map((x) => x.row),
       dbId: this.dbId,
+      renumberRev: this.renumberRev,
+      keepFrom: this.keepFrom,
       more: full,
       rev: full ? page[page.length - 1]!.rev : Math.max(this.rev, since),
       counts: full ? null : counts,
@@ -225,7 +241,7 @@ describe('Supabase backup: copying', () => {
     expect(file().getSheets()[1]!.getName()).toBe('Bills 2026-10');
     expect(billsIn(file(), '202610').map((x) => x.by)).toEqual(['owner', 'counter1', 'owner', 'counter1', 'owner']);
     const row = g.rows(file(), 'Bills 2026-10')[0]!;
-    expect(row.slice(0, 3)).toEqual(['RCPT-2026-0008', '05-10-2026', '13:38']); // Aug 1–3, Sep 4–7, Oct 8–12
+    expect(row.slice(0, 3)).toEqual(['RCPT-2026-0008', '05-10-2026', '01:38 PM']); // Aug 1–3, Sep 4–7, Oct 8–12
     expect(row[16]).toBe(450); // Total ₹
     // It sent only the public key and the backup key, and asked from the start.
     const sent = g.rt.fetches[0]!;
@@ -417,8 +433,33 @@ describe('Supabase backup: when something goes wrong', () => {
     expect(g.records(file(), 'Counters')).toEqual([{ monthKey: '2026', last: 2 }, { monthKey: '202609', last: 1 }]);
     const head = file().getSheetByName('Bills 2026-10')!.dump()[0]!;
     const row = g.rows(file(), 'Bills 2026-10')[0]!;
-    expect(row[head.indexOf('Entered on (if added later)')]).toBe('12-10-2026 14:30');
+    expect(row[head.indexOf('Entered on (if added later)')]).toBe('12-10-2026 02:30 PM');
     expect(g.rows(file(), 'Bills 2026-09')[0]![head.indexOf('Entered on (if added later)')]).toBe('');
+  });
+
+  it('Supabase renumbers its bills in date order (owner request, 27 Oct 2026): the kept months are copied again, older months stay', () => {
+    const at = (m: number, d: number) => Date.UTC(2026, m - 1, d, 8, 0);
+    sb.save('202607', { createdAt: at(7, 20) }, 'owner', true); // RCPT-202607-0001
+    sb.save('202609', { createdAt: at(9, 20) }, 'owner', true); // RCPT-202609-0001
+    sb.save('202610', { createdAt: at(10, 9) }); // RCPT-2026-0001, added for 9 Oct
+    sb.save('202610', { createdAt: at(10, 5) }, 'counter1', true); // RCPT-202610-0001
+    setUp();
+    run();
+    sb.purgeBefore('202608'); // Supabase keeps 3 months; July stays only in the sheet
+    sb.renumberYear('2026');
+    const report = run();
+    expect(report.join(' ')).toContain('copied again');
+    expect(report).toContain('Checked: all 3 bills Supabase has are in the sheet, plus 1 older month kept only here.');
+    expect(billsIn(file(), '202607').map((x) => x.bill.billNo)).toEqual(['RCPT-202607-0001']); // as it was
+    expect(billsIn(file(), '202609').map((x) => [x.bill.billNo, x.bill['oldNo']])).toEqual([['RCPT-2026-0001', 'RCPT-202609-0001']]);
+    expect(billsIn(file(), '202610').map((x) => [x.bill.billNo, x.bill['oldNo'], x.by]).sort()).toEqual([
+      ['RCPT-2026-0002', 'RCPT-202610-0001', 'counter1'],
+      ['RCPT-2026-0003', 'RCPT-2026-0001', 'owner'],
+    ]);
+    const head = file().getSheetByName('Bills 2026-10')!.dump()[0]!;
+    expect(g.rows(file(), 'Bills 2026-10').map((r) => r[head.indexOf('Old no. (on the paper receipt)')]).sort()).toEqual(['RCPT-2026-0001', 'RCPT-202610-0001']);
+    expect(g.records(file(), 'Counters')).toContainEqual({ monthKey: '2026', last: 3 });
+    expect(run().join(' ')).not.toContain('copied again'); // once only
   });
 
   it('a bill whose data lost its number is filed under the number Supabase keeps', () => {

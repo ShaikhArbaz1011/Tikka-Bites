@@ -33,6 +33,7 @@ q -d tb_test -f g_super_admin.sql
 q -d tb_test -f h_keep_alive.sql
 q -d tb_test -f i_backup.sql
 q -d tb_test -f j_backdated.sql
+q -d tb_test -f k_date_order.sql
 q -d tb_test_import -f c_import.sql
 q -d tb_test_retention -f f_retention_dates.sql
 for db in tb_test tb_test_import tb_test_retention; do q -d postgres -c "drop database $db"; done

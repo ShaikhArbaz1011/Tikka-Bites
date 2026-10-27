@@ -8,11 +8,11 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resetDBForTests } from '../../src/db/db';
-import { saveBill, voidBill, getMonthlyStats, listBillsPage, type BillDraft } from '../../src/db/billRepo';
+import { saveBill, voidBill, getMonthlyStats, listBillsPage, getBill, type BillDraft } from '../../src/db/billRepo';
 import { addDish } from '../../src/db/menuRepo';
-import { runReport, monthComparison, wholeMonthsIn } from '../../src/ui/reports/query';
+import { runReport, monthComparison, wholeMonthsIn, billMatches } from '../../src/ui/reports/query';
 import { collectExport } from '../../src/ui/reports/exportExcel';
-import { presetRange, monthRange, customRange, rangeIsWholeMonth, prevMonthKey, formatDateTime, formatMonthKey, daysIn } from '../../src/core/dates';
+import { presetRange, monthRange, customRange, rangeIsWholeMonth, prevMonthKey, formatDateTime, formatTime12, formatMonthKey, daysIn } from '../../src/core/dates';
 import { monthKeyOf } from '../../src/core/billNo';
 import { excelDate, excelTime } from '../../src/core/xlsx';
 import { NO_DISCOUNT } from '../../src/core/totals';
@@ -60,7 +60,7 @@ describe('bills follow the local month; numbers follow the local year', () => {
     expect(b.monthKey).toBe('202602');
     expect(b.hour).toBe(0);
     expect(b.weekday).toBe(0); // 1 Feb 2026 is a Sunday
-    expect(formatDateTime(b.createdAt)).toBe('01/02/2026 00:30');
+    expect(formatDateTime(b.createdAt)).toBe('01/02/2026 12:30 AM');
   });
 
   it('one count through the months of a year', async () => {
@@ -83,7 +83,7 @@ describe('bills follow the local month; numbers follow the local year', () => {
   it('leap day 29 Feb 2028 is a normal February bill', async () => {
     const b = await saveBill(bill(), ist(2028, 2, 29, 13, 0));
     expect(b.billNo).toBe('RCPT-2028-0001');
-    expect(formatDateTime(b.createdAt)).toBe('29/02/2028 13:00');
+    expect(formatDateTime(b.createdAt)).toBe('29/02/2028 01:00 PM');
   });
 });
 
@@ -257,17 +257,52 @@ describe('3-month clean-up on the phone deletes exactly one month at a time', ()
 describe('a bill forgotten earlier this month, entered with its date (owner request, 24 Oct 2026)', () => {
   const NOW = ist(2026, 10, 24, 15, 0);
 
-  it('is saved under its own date and time, counted in that day, numbered in the year', async () => {
+  it('is saved under its own date and time, counted in that day, numbered in date order', async () => {
     await saveBill(bill(), ist(2026, 10, 22, 12)); // RCPT-2026-0001
     const b = await saveBill(bill({ billedAt: ist(2026, 10, 20, 14, 30) }), NOW);
-    expect(b).toMatchObject({ billNo: 'RCPT-2026-0002', createdAt: ist(2026, 10, 20, 14, 30), monthKey: '202610', hour: 14, weekday: 2, enteredAt: NOW }); // 20 Oct 2026 is a Tuesday
-    expect(formatDateTime(b.createdAt)).toBe('20/10/2026 14:30');
+    expect(b).toMatchObject({ billNo: 'RCPT-2026-0001', createdAt: ist(2026, 10, 20, 14, 30), monthKey: '202610', hour: 14, weekday: 2, enteredAt: NOW }); // 20 Oct 2026 is a Tuesday
+    expect(formatDateTime(b.createdAt)).toBe('20/10/2026 02:30 PM');
     expect((await getMonthlyStats('202610'))!.billCount).toBe(2);
-    // Reports for 20 Oct find it; the list is in date order, so it comes after the 22 Oct bill.
+    // The 22 Oct bill moved up a number and remembers the one on its paper receipt.
+    expect(await getBill('RCPT-2026-0002')).toMatchObject({ createdAt: ist(2026, 10, 22, 12), oldNo: 'RCPT-2026-0001' });
+    // Reports for 20 Oct find it; the list shows the newest first, so it comes after the 22 Oct bill.
     expect((await runReport({ ...base, range: customRange('2026-10-20', '2026-10-20')! })).stats.billCount).toBe(1);
-    expect((await listBillsPage(monthRange(2026, 9), 50)).bills.map((x) => x.billNo)).toEqual(['RCPT-2026-0001', 'RCPT-2026-0002']);
+    expect((await listBillsPage(monthRange(2026, 9), 50)).bills.map((x) => x.billNo)).toEqual(['RCPT-2026-0002', 'RCPT-2026-0001']);
     // A normal bill has no "entered" time.
     expect('enteredAt' in (await saveBill(bill(), NOW))).toBe(false);
+  });
+
+  it('numbers follow the date: later bills move up by one and keep the number on their paper receipt (owner request, 27 Oct 2026)', async () => {
+    for (const day of [5, 10, 15]) await saveBill(bill(), ist(2026, 10, day, 13)); // 0001, 0002, 0003
+    // A September bill saved late (as an offline phone would): dated before all of them, so it is 0001.
+    const sep = await saveBill(bill(), ist(2026, 9, 30, 20));
+    expect(sep.billNo).toBe('RCPT-2026-0001');
+    const on8 = await saveBill(bill({ billedAt: ist(2026, 10, 8, 19, 45) }), NOW);
+    expect(on8.billNo).toBe('RCPT-2026-0003'); // after 30 Sep and 5 Oct, before 10 Oct
+    const on9 = await saveBill(bill({ billedAt: ist(2026, 10, 9, 9, 15) }), NOW);
+    expect(on9.billNo).toBe('RCPT-2026-0004');
+    const all = (await listBillsPage(monthRange(2026, 8), 50)).bills.concat((await listBillsPage(monthRange(2026, 9), 50)).bills);
+    const view = all.map((b) => [b.billNo, formatDateTime(b.createdAt), b.oldNo]).sort((x, y) => x[0]!.localeCompare(y[0]!));
+    expect(view).toEqual([
+      ['RCPT-2026-0001', '30/09/2026 08:00 PM', undefined],
+      ['RCPT-2026-0002', '05/10/2026 01:00 PM', 'RCPT-2026-0001'],
+      ['RCPT-2026-0003', '08/10/2026 07:45 PM', undefined],
+      ['RCPT-2026-0004', '09/10/2026 09:15 AM', undefined],
+      ['RCPT-2026-0005', '10/10/2026 01:00 PM', 'RCPT-2026-0002'], // moved twice: still the number it was printed with
+      ['RCPT-2026-0006', '15/10/2026 01:00 PM', 'RCPT-2026-0003'],
+    ]);
+    // Totals are untouched by the moves; the next bill gets the next number.
+    expect((await getMonthlyStats('202610'))!.billCount).toBe(5);
+    expect((await getMonthlyStats('202609'))!.billCount).toBe(1);
+    expect((await saveBill(bill(), NOW)).billNo).toBe('RCPT-2026-0007');
+    // Searching a printed number finds the bill that has it now and the one that was printed with it.
+    const f = { ...base, range: monthRange(2026, 9), billNo: '0002' };
+    expect(all.filter((b) => billMatches(b, f)).map((b) => b.billNo).sort()).toEqual(['RCPT-2026-0002', 'RCPT-2026-0005']);
+    // Excel: the old number in its own column.
+    const { sheets } = await collectExport({ ...base, range: monthRange(2026, 9) }, 'October', 'Tikka Bites');
+    expect(sheets[1]!.rows.map((r) => [r[0], r[15]])).toContainEqual(['RCPT-2026-0005', 'RCPT-2026-0002']);
+    // Voiding by the current number voids that bill.
+    expect((await voidBill('RCPT-2026-0005', 'Customer left', NOW)).createdAt).toBe(ist(2026, 10, 10, 13));
   });
 
   it('the 1st of the month just after midnight IST: the 1st itself is allowed, last month is not', async () => {
@@ -296,5 +331,21 @@ describe('a bill forgotten earlier this month, entered with its date (owner requ
     expect(localTime('2026-02-30', '12:00')).toBeNull();
     expect(localTime('2026-10-20', '')).toBeNull();
     expect(localTime('2026-10-20', '25:00')).toBeNull();
+  });
+
+  it('the time is picked on a 12-hour clock with AM/PM (owner request, 27 Oct 2026)', async () => {
+    const { time24 } = await import('../../src/ui/billing/billDate');
+    expect(time24('12', '05', 'AM')).toBe('00:05'); // just after midnight
+    expect(time24('12', '30', 'PM')).toBe('12:30'); // noon
+    expect(time24('2', '30', 'PM')).toBe('14:30');
+    expect(time24('11', '59', 'PM')).toBe('23:59');
+    expect(time24('9', '00', 'AM')).toBe('09:00');
+    for (const bad of [['13', '00', 'PM'], ['0', '00', 'AM'], ['1', '60', 'AM'], ['1', '5', 'AM'], ['1', '05', 'XM'], ['', '05', 'AM']] as const) {
+      expect(time24(bad[0], bad[1], bad[2])).toBe('');
+    }
+    expect(formatTime12(ist(2026, 11, 1, 0, 5))).toBe('12:05 AM');
+    expect(formatTime12(ist(2026, 11, 1, 12, 0))).toBe('12:00 PM');
+    expect(formatTime12(ist(2026, 11, 1, 23, 59))).toBe('11:59 PM');
+    expect(formatTime12(ist(2026, 11, 1, 9, 7))).toBe('09:07 AM');
   });
 });

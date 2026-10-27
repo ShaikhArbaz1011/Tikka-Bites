@@ -272,6 +272,7 @@ function layout(ctx: Ctx, bill: Bill, s: Settings, logo: HTMLImageElement | null
     ['Order', orderLine(bill)],
   ];
   if (bill.enteredAt !== undefined) meta.splice(2, 0, ['Entered', formatDateTime(bill.enteredAt)]); // added later for an earlier date
+  if (bill.oldNo) meta.splice(1, 0, ['Old no.', bill.oldNo]); // its number moved up when a bill for an earlier time was added
   if (bill.customerName) meta.push(['Customer', bill.customerName]);
   const labelW = Math.max(...meta.map(([label]) => measure(ctx, label, T.body)));
   const metaRows = meta.map(([label, value]) => ({ label, lines: wrap(ctx, value, W - labelW - GAP, T.body) }));

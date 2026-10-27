@@ -1,7 +1,8 @@
-import { getDB, SETTINGS_KEY, DEFAULT_SETTINGS } from './db';
+import type { IDBPObjectStore } from 'idb';
+import { getDB, SETTINGS_KEY, DEFAULT_SETTINGS, type RestoDB } from './db';
 import { ORDER_TYPES, PAYMENT_MODES, type Bill, type BillItem, type OrderType, type PaymentMode, type MonthlyStats } from './types';
 import { computeTotals, type Discount } from '../core/totals';
-import { monthKeyOf, nextBillNo, yearKeyOf } from '../core/billNo';
+import { formatBillNo, monthKeyOf, yearKeyOf, yearlySeq } from '../core/billNo';
 import { draw, type BagState } from '../core/shuffleBag';
 import { applyBill, emptyStats } from '../core/stats';
 import { isQty, cleanText, LIMITS } from '../core/validate';
@@ -62,6 +63,36 @@ export function validateDraft(d: BillDraft, now: number = Date.now()): BillDraft
   };
 }
 
+type BillStore = IDBPObjectStore<RestoDB, ('menu' | 'bills' | 'counters' | 'monthlyStats' | 'settings' | 'cheesyLines' | 'meta')[], 'bills', 'readwrite'>;
+
+/**
+ * Receipt numbers follow date order within the year (owner request, 27 Oct 2026). Returns the
+ * number for a bill at `at`: normally the next one; if bills of the year are dated after it, it
+ * takes the place of the first of them, and every number from there on moves up by one (each
+ * moved bill keeps the number it was first issued with as oldNo). Same rule as save_bill().
+ */
+async function takePlace(bills: BillStore, year: string, at: number, last: number): Promise<number> {
+  const endOfYear = +new Date(Number(year) + 1, 0, 1);
+  let p = Infinity;
+  for (let c = await bills.index('createdAt').openCursor(IDBKeyRange.bound(at, endOfYear, true, true)); c; c = await c.continue()) {
+    const s = yearlySeq(c.value.billNo, year);
+    if (s !== null && s < p) p = s;
+  }
+  if (p === Infinity) return last + 1; // the usual case: nothing of this year is dated later
+  const moving: Bill[] = [];
+  const startOfYear = +new Date(Number(year), 0, 1);
+  for (let c = await bills.index('createdAt').openCursor(IDBKeyRange.bound(startOfYear, endOfYear, false, true)); c; c = await c.continue()) {
+    const s = yearlySeq(c.value.billNo, year);
+    if (s !== null && s >= p) moving.push(c.value);
+  }
+  moving.sort((a, b) => yearlySeq(b.billNo, year)! - yearlySeq(a.billNo, year)!); // highest first: each new number is free
+  for (const b of moving) {
+    await bills.delete(b.billNo);
+    await bills.put({ ...b, billNo: formatBillNo(year, yearlySeq(b.billNo, year)! + 1), oldNo: b.oldNo ?? b.billNo });
+  }
+  return p;
+}
+
 /**
  * Save a bill atomically: bill number, dish snapshots, totals, cheesy line,
  * monthly stats and dish "used" flags are written in ONE IndexedDB transaction.
@@ -96,14 +127,15 @@ export async function saveBill(input: BillDraft, now: number = Date.now()): Prom
     }
     const totals = computeTotals(items, draft.discount, settings.roundOff);
 
-    // The bill's own time (a back-dated bill keeps its date); the next number of that year.
+    // The bill's own time (a back-dated bill keeps its date) and its number in the year.
     const at = draft.billedAt ?? now;
     const monthKey = monthKeyOf(at);
     const year = yearKeyOf(at);
     const counters = tx.objectStore('counters');
-    const counter = await counters.get(year);
-    const { billNo, seq } = nextBillNo(year, counter?.last);
-    await counters.put({ monthKey: year, last: seq });
+    const last = (await counters.get(year))?.last ?? 0;
+    const seq = await takePlace(tx.objectStore('bills'), year, at, last);
+    const billNo = formatBillNo(year, seq);
+    await counters.put({ monthKey: year, last: last + 1 });
 
     // Cheesy line from the shuffle bag.
     const lines = (await tx.objectStore('cheesyLines').getAll()).filter((l) => l.active);

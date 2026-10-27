@@ -34,11 +34,11 @@ test('bills around midnight on the 1st land in the right month everywhere', asyn
   await expect(page.locator('.dish-row')).toHaveCount(40);
 
   const jan = await billOneWrap(page);
-  expect(jan).toEqual({ billNo: 'RCPT-2026-0001', date: '31/01/2026 23:58' });
+  expect(jan).toEqual({ billNo: 'RCPT-2026-0001', date: '31/01/2026 11:58 PM' });
 
   await page.clock.setFixedTime(IST('2026-02-01T00:02:00'));
   const feb = await billOneWrap(page);
-  expect(feb).toEqual({ billNo: 'RCPT-2026-0002', date: '01/02/2026 00:02' }); // numbers count through the year
+  expect(feb).toEqual({ billNo: 'RCPT-2026-0002', date: '01/02/2026 12:02 AM' }); // numbers count through the year
 
   // Reports: "This month" (February) and "Last month" (January) each hold one bill.
   await page.getByRole('link', { name: 'Reports', exact: true }).click();
@@ -46,7 +46,7 @@ test('bills around midnight on the 1st land in the right month everywhere', asyn
   await expect(page.locator('.range-label')).toHaveText('This month · Feb 2026');
   await expect(bills).toHaveText('1');
   await expect(page.locator('.bill-row')).toHaveCount(1);
-  await expect(page.locator('.bill-row .bill-when')).toHaveText('01/02/2026 00:02');
+  await expect(page.locator('.bill-row .bill-when')).toHaveText('01/02/2026 12:02 AM');
 
   await page.getByLabel('Date range').selectOption('lastMonth');
   await expect(page.locator('.range-label')).toHaveText('Last month · Jan 2026');
@@ -107,20 +107,32 @@ test('a bill forgotten earlier this month is entered with its date from the cale
   await expect(date).toHaveAttribute('max', '2026-10-24');
   await expect(page.getByLabel('Bill time')).toBeHidden();
   await date.fill('2026-10-20');
-  await page.getByLabel('Bill time').fill('14:30');
-  await expect(page.locator('.bill-date-note')).toHaveText(/Tue 20 Oct 2026, 14:30/);
+  // The time on a 12-hour clock with AM/PM, whatever the phone's own setting (owner request, 27 Oct 2026).
+  await page.getByLabel('Hour').selectOption('2');
+  await page.getByLabel('Minute').selectOption('30');
+  await page.getByLabel('AM or PM').selectOption('PM');
+  await expect(page.locator('.bill-date-note')).toHaveText(/Tue 20 Oct 2026, 02:30 PM/);
 
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   const dialog = page.locator('dialog[open]');
   await expect(dialog.locator('.modal-title')).toHaveText('Receipt RCPT-2026-0001');
-  await expect(dialog.locator('.r-meta .r-row', { hasText: 'Date' }).locator('.r-num')).toHaveText('20/10/2026 14:30');
-  await expect(dialog.locator('.r-meta .r-row', { hasText: 'Entered' }).locator('.r-num')).toHaveText('24/10/2026 15:00');
+  await expect(dialog.locator('.r-meta .r-row', { hasText: 'Date' }).locator('.r-num')).toHaveText('20/10/2026 02:30 PM');
+  await expect(dialog.locator('.r-meta .r-row', { hasText: 'Entered' }).locator('.r-num')).toHaveText('24/10/2026 03:00 PM');
   await dialog.getByRole('button', { name: 'Done' }).click();
 
-  // It stays on that day for the next forgotten bill, until Today is tapped.
-  if (isPhone(page)) await page.locator('.dish-card', { hasText: 'Chicken Tikka Wrap' }).first().click();
+  // It stays on that day for the next forgotten bill, until Today is tapped. An earlier one that day
+  // takes number 0001 (numbers follow the date), and the 2:30 PM bill moves up to 0002.
+  await page.locator('.dish-card', { hasText: 'Chicken Tikka Wrap' }).first().click();
   if (isPhone(page)) await page.locator('.cart-bar').click();
   await expect(date).toHaveValue('2026-10-20');
+  await page.getByLabel('Hour').selectOption('1');
+  await page.getByLabel('Minute').selectOption('15');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(dialog.locator('.modal-title')).toHaveText('Receipt RCPT-2026-0001');
+  await expect(dialog.locator('.r-meta .r-row', { hasText: 'Date' }).locator('.r-num')).toHaveText('20/10/2026 01:15 PM');
+  await dialog.getByRole('button', { name: 'Done' }).click();
+  if (isPhone(page)) await page.locator('.dish-card', { hasText: 'Chicken Tikka Wrap' }).first().click();
+  if (isPhone(page)) await page.locator('.cart-bar').click();
   await page.getByRole('button', { name: 'Today' }).click();
   await expect(date).toHaveValue('2026-10-24');
   await expect(page.locator('.bill-date-note')).toBeHidden();
@@ -128,7 +140,13 @@ test('a bill forgotten earlier this month is entered with its date from the cale
 
   // Reports file it under 20 Oct.
   await page.getByRole('link', { name: 'Reports', exact: true }).click();
-  await expect(page.locator('.bill-row .bill-when')).toHaveText('20/10/2026 14:30');
+  await expect(page.locator('.bill-row .bill-when')).toHaveText(['20/10/2026 02:30 PM', '20/10/2026 01:15 PM']);
+  await expect(page.locator('.bill-row .bill-no')).toHaveText(['RCPT-2026-0002', 'RCPT-2026-0001']);
+  await expect(page.locator('.bill-row').first().locator('.bill-old-no')).toHaveText('was RCPT-2026-0001'); // the number on its paper receipt
+  // Viewing it again shows both numbers.
+  await page.locator('.bill-row').first().getByRole('button', { name: /View/ }).click();
+  await expect(dialog.locator('.r-meta .r-row', { hasText: 'Old no.' }).locator('.r-num')).toHaveText('RCPT-2026-0001');
+  await dialog.getByRole('button', { name: /Done|Close/ }).first().click();
   await page.getByLabel('Date range').selectOption('today');
   await expect(page.locator('.bill-row')).toHaveCount(0);
   expect(errors).toEqual([]);

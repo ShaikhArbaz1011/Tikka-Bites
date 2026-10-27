@@ -41,6 +41,8 @@ export interface PullPage {
   settings: Settings | null;
   bills: Bill[];
   dbId: string;
+  /** Goes up when receipt numbers changed in a way this phone can't follow bill by bill: copy everything again. */
+  renumberRev?: number;
   ready: boolean;
   importOpen: boolean;
   keepFrom: string;
@@ -120,7 +122,9 @@ export const api = {
     authed((t) => fn<PullPage>('pull_changes', { p_since: since, p_limit: limit }, t, onSheets() ? 60_000 : undefined)),
   /** Online bills are numbered by the server; `offline` bills keep their sale time and price. */
   saveBill: (bill: Record<string, unknown>, timeoutMs?: number) => authed((t) => fn<Bill>('save_bill', { p_bill: bill }, t, timeoutMs)),
-  voidBill: (billNo: string, reason: string) => authed((t) => fn<Bill>('void_bill', { p_bill_no: billNo, p_reason: reason }, t)),
+  /** `createdAt` makes the server check it is still the same bill (numbers move when an earlier bill is added). */
+  voidBill: (billNo: string, reason: string, createdAt?: number) =>
+    authed((t) => fn<Bill>('void_bill', { p_bill_no: billNo, p_reason: reason, ...(createdAt !== undefined ? { p_created_at: createdAt } : {}) }, t)),
   patchSettings: (set: Partial<Settings>, unset: string[] = []) => authed((t) => fn<Settings>('patch_settings', { p_set: set, p_unset: unset }, t)),
   purgeOldMonths: () => authed((t) => fn<number>('purge_old_months', {}, t)),
 

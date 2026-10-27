@@ -57,6 +57,12 @@ export function parseBillNo(billNo: string): ParsedBillNo | null {
   return { counterKey: `${m[1]}${m[2]}`, year: m[1]!, monthKey: `${m[1]}${m[2]}`, seq: Number(m[3]) };
 }
 
+/** The sequence of a yearly number of that year (RCPT-2026-0007 → 7 for '2026'), else null. */
+export function yearlySeq(billNo: string, year: string): number | null {
+  const y = YEARLY_NO_RE.exec(billNo);
+  return y && y[1] === year ? Number(y[2]) : null;
+}
+
 /** Does this final bill number fit the bill's month (YYYYMM)? */
 export function billNoMatchesMonth(billNo: string, monthKey: string): boolean {
   const p = parseBillNo(billNo);

@@ -34,6 +34,7 @@ export function billList(onChanged: () => void): { el: HTMLElement; load(f: Repo
       { class: `bill-row${b.status === 'void' ? ' is-void' : ''}`, dataset: { no: b.billNo } },
       h('div', { class: 'bill-row-main' },
         h('span', { class: 'bill-no', text: b.billNo }),
+        b.oldNo ? h('span', { class: 'muted bill-old-no', text: `was ${b.oldNo}` }) : null,
         h('span', { class: 'muted bill-when', text: formatDateTime(b.createdAt) })),
       h('span', { class: 'bill-meta muted', text: `${ORDER_LABEL[b.orderType]}${b.tableNo ? ` · T${b.tableNo}` : ''} · ${PAYMENT_LABEL[b.paymentMode]} · ${b.itemCount} item${b.itemCount === 1 ? '' : 's'}` }),
       b.status === 'void' ? h('span', { class: 'badge badge-void', text: 'VOID', attrs: { title: b.voidReason ?? '' } }) : null,

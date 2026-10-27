@@ -119,6 +119,7 @@ function checkDish(v: unknown, p: string): number {
   for (const k of ['isVeg', 'active', 'deleted', 'usedInBills']) bool(o[k], `${p}.${k}`);
   int(o['createdAt'], `${p}.createdAt`, 0, MAX_TIME);
   if ('enteredAt' in o) int(o['enteredAt'], `${p}.enteredAt`, 0, MAX_TIME);
+  if ('oldNo' in o && !BILL_NO_RE.test(str(o['oldNo'], `${p}.oldNo`, 1, 30))) fail(`${p}.oldNo`, 'is not a receipt number');
   int(o['updatedAt'], `${p}.updatedAt`, 0, MAX_TIME);
   return id;
 }
@@ -154,7 +155,7 @@ const BILL_REQUIRED = [
 ];
 
 function checkBill(v: unknown, p: string): string {
-  const o = obj(v, p, BILL_REQUIRED, ['tableNo', 'customerName', 'voidReason', 'voidedAt', 'printedAs', 'sync', 'enteredAt']);
+  const o = obj(v, p, BILL_REQUIRED, ['tableNo', 'customerName', 'voidReason', 'voidedAt', 'printedAs', 'sync', 'enteredAt', 'oldNo']);
   const billNo = str(o['billNo'], `${p}.billNo`, 1, 30);
   if (BILL_NO_RE.test(billNo)) {
     if (typeof o['monthKey'] !== 'string' || !billNoMatchesMonth(billNo, o['monthKey'])) fail(`${p}.monthKey`, 'does not match bill number');

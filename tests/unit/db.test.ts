@@ -78,7 +78,7 @@ describe('saveBill', () => {
     expect((await saveBill(draft(), SEP)).billNo).toBe('RCPT-2026-0001');
     expect((await saveBill(draft(), SEP)).billNo).toBe('RCPT-2026-0002');
     expect((await saveBill(draft(), OCT)).billNo).toBe('RCPT-2026-0003');
-    expect((await saveBill(draft(), SEP)).billNo).toBe('RCPT-2026-0004');
+    expect((await saveBill(draft(), OCT + 60_000)).billNo).toBe('RCPT-2026-0004');
   });
 
   it('never duplicates bill numbers under 50 concurrent saves', async () => {

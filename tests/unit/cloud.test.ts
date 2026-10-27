@@ -266,6 +266,8 @@ describe('saving bills with the shared database', () => {
     route('POST /rest/v1/rpc/void_bill', (b) => ({ json: serverBill({ billNo: b.p_bill_no, status: 'void', voidReason: b.p_reason, voidedAt: NOW }) }));
     await voidBill('RCPT-202609-0001', 'Customer left');
     expect((await getMonthlyStats('202609'))).toMatchObject({ billCount: 0, voidCount: 1 });
+    // With the bill's time, so the server can tell if that number now belongs to another bill.
+    expect(calls.find((c) => c.path.includes('void_bill'))!.body).toEqual({ p_bill_no: 'RCPT-202609-0001', p_reason: 'Customer left', p_created_at: NOW });
 
     route('POST /rest/v1/rpc/save_bill', () => 'offline');
     const off = await saveBill(draft, NOW);
@@ -303,6 +305,62 @@ describe('pulling changes from other phones', () => {
     expect(await getMeta('cloudRev')).toBe(11);
     expect((await listMenu())[0]?.pricePaise).toBe(47000);
     expect((await getMonthlyStats('202609'))).toMatchObject({ billCount: 1, voidCount: 1, revenuePaise: 45000 });
+  });
+
+  it('a bill added for an earlier time: the later bills come back under new numbers, totals stay exact', async () => {
+    await signedInWithMenu();
+    const later = NOW + 3_600_000;
+    await applyChanges({
+      bills: [
+        serverBill({ billNo: 'RCPT-2026-0001' }),
+        serverBill({ billNo: 'RCPT-2026-0002', createdAt: later, totalPaise: 90000, subtotalPaise: 90000 }),
+        serverBill({ billNo: 'RCPT-2026-0003', createdAt: later + 60_000, status: 'void', voidReason: 'x', voidedAt: later }),
+      ],
+    });
+    expect(await getMonthlyStats('202609')).toMatchObject({ billCount: 2, voidCount: 1, revenuePaise: 135000 });
+    // Another phone added a bill for half an hour after the first: it is 0002 now, the others moved up.
+    route('POST /rest/v1/rpc/pull_changes', () => ({
+      json: {
+        menu: [], lines: [], settings: null, dbId: 'db-1', renumberRev: 0, ready: true, importOpen: false, keepFrom: '202607', more: false, rev: 9,
+        bills: [
+          serverBill({ billNo: 'RCPT-2026-0004', createdAt: later + 60_000, status: 'void', voidReason: 'x', voidedAt: later, oldNo: 'RCPT-2026-0003' }),
+          serverBill({ billNo: 'RCPT-2026-0003', createdAt: later, totalPaise: 90000, subtotalPaise: 90000, oldNo: 'RCPT-2026-0002' }),
+          serverBill({ billNo: 'RCPT-2026-0002', createdAt: NOW + 1_800_000, totalPaise: 30000, subtotalPaise: 30000, enteredAt: later }),
+        ],
+      },
+    }));
+    route('POST /rest/v1/rpc/purge_old_months', () => ({ json: 0 }));
+    await syncNow();
+    expect(await getMonthlyStats('202609')).toMatchObject({ billCount: 3, voidCount: 1, revenuePaise: 165000 });
+    expect(await getBill('RCPT-2026-0002')).toMatchObject({ createdAt: NOW + 1_800_000, totalPaise: 30000 });
+    expect(await getBill('RCPT-2026-0003')).toMatchObject({ createdAt: later, oldNo: 'RCPT-2026-0002' });
+    expect(await getBill('RCPT-2026-0004')).toMatchObject({ status: 'void', oldNo: 'RCPT-2026-0003' });
+    expect(await getMeta('renumberSeen')).toBeUndefined(); // moves inside a month: followed bill by bill
+  });
+
+  it('the one-time renumbering (or a move across months): this phone copies everything again, waiting offline bills stay', async () => {
+    await signedInWithMenu();
+    await applyChanges({ bills: [serverBill({ billNo: 'RCPT-202609-0001' })] });
+    route('POST /rest/v1/rpc/save_bill', () => 'offline');
+    const off = await saveBill(draft, NOW);
+    route('POST /rest/v1/rpc/save_bill', () => ({ status: 400, json: { code: 'P0001', message: 'Refused for this test' } }));
+    await setMeta('cloudRev', 50);
+    const sinceSeen: number[] = [];
+    route('POST /rest/v1/rpc/pull_changes', (b) => {
+      sinceSeen.push(b.p_since);
+      const bills = b.p_since === 0 ? [serverBill({ billNo: 'RCPT-2026-0001', oldNo: 'RCPT-202609-0001' })] : [];
+      return { json: { menu: b.p_since === 0 ? [menuRow] : [], lines: [], settings: null, bills, dbId: 'db-1', renumberRev: 1, ready: true, importOpen: false, keepFrom: '202607', more: false, rev: 60 } };
+    });
+    route('POST /rest/v1/rpc/purge_old_months', () => ({ json: 0 }));
+    await syncNow();
+    expect(sinceSeen).toEqual([50, 0]);
+    expect(await getBill('RCPT-202609-0001')).toBeUndefined(); // the old number is gone, not counted twice
+    expect(await getBill('RCPT-2026-0001')).toMatchObject({ oldNo: 'RCPT-202609-0001' });
+    expect(await getBill(off.billNo)).toBeTruthy();
+    expect(await getMonthlyStats('202609')).toMatchObject({ billCount: 2 }); // the server's bill + the one waiting here
+    expect(await getMeta('renumberSeen')).toBe(1);
+    await syncNow(); // nothing new: no second copy
+    expect(sinceSeen).toEqual([50, 0, 60]);
   });
 
   it('keeps only the months the server keeps', async () => {

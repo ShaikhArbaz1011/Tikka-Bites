@@ -38,7 +38,7 @@ export async function collectExport(f: ReportFilter, label: string, restaurant: 
     billRows.push([
       b.billNo, b.createdAt, b.createdAt, paid ? 'Paid' : 'Void', ORDER_LABEL[b.orderType], b.tableNo ?? '', b.customerName ?? '',
       PAYMENT_LABEL[b.paymentMode], b.items.map((i) => `${i.qty} × ${i.name}`).join(', '), b.itemCount,
-      rupees(b.subtotalPaise), rupees(b.discountPaise), rupees(b.roundOffPaise), rupees(b.totalPaise), b.voidReason ?? '',
+      rupees(b.subtotalPaise), rupees(b.discountPaise), rupees(b.roundOffPaise), rupees(b.totalPaise), b.voidReason ?? '', b.oldNo ?? '',
     ]);
     for (const i of b.items) {
       if (itemFilter && !itemFilter(i)) continue;
@@ -95,7 +95,7 @@ export async function collectExport(f: ReportFilter, label: string, restaurant: 
       columns: [
         { header: 'Bill No', type: 'text', width: 18 },
         { header: 'Date', type: 'date', width: 12 },
-        { header: 'Time', type: 'time', width: 8 },
+        { header: 'Time', type: 'time', width: 10 },
         { header: 'Status', type: 'text', width: 8 },
         { header: 'Order Type', type: 'text', width: 11 },
         { header: 'Table', type: 'text', width: 7 },
@@ -108,6 +108,7 @@ export async function collectExport(f: ReportFilter, label: string, restaurant: 
         { header: 'Round Off', type: 'money', width: 11 },
         { header: 'Total', type: 'money', width: 13 },
         { header: 'Void Reason', type: 'text', width: 24 },
+        { header: 'Old No (on the paper receipt)', type: 'text', width: 18 }, // its number moved when an earlier bill was added
       ],
       rows: billRows,
     },
@@ -116,7 +117,7 @@ export async function collectExport(f: ReportFilter, label: string, restaurant: 
       columns: [
         { header: 'Bill No', type: 'text', width: 18 },
         { header: 'Date', type: 'date', width: 12 },
-        { header: 'Time', type: 'time', width: 8 },
+        { header: 'Time', type: 'time', width: 10 },
         { header: 'Status', type: 'text', width: 8 },
         { header: 'Dish', type: 'text', width: 36 },
         { header: 'Category', type: 'text', width: 22 },

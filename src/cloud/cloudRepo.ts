@@ -93,6 +93,7 @@ async function saveBill(draft: BillDraft, now: number): Promise<Bill> {
       onlineSaveTimeoutMs(),
     );
     await applyChanges({ bills: [saved] });
+    if (draft.billedAt !== undefined) void syncNow(); // the later bills moved up a number: fetch them now
     return saved;
   } catch (e) {
     if (!(e instanceof CloudError)) throw e;
@@ -111,10 +112,11 @@ async function voidBill(billNo: string, reason: string): Promise<Bill> {
   const local = await (await getDB()).get('bills', billNo);
   if (local?.sync) return voidPendingLocally(billNo, reason); // never uploaded: just cancel it here
   try {
-    const voided = await api.voidBill(billNo, reason);
+    const voided = await api.voidBill(billNo, reason, local?.createdAt);
     await applyChanges({ bills: [voided] });
     return voided;
   } catch (e) {
+    if (e instanceof CloudError && e.kind === 'rejected') void syncNow(); // e.g. the numbers moved: fetch them
     if (e instanceof CloudError) throw new BillError(e.kind === 'offline' ? 'Voiding needs the internet. Try again when you are online.' : e.message);
     throw e;
   }

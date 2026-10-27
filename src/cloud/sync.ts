@@ -95,6 +95,7 @@ async function push(retryRefused: boolean): Promise<void> {
 async function pull(): Promise<boolean> {
   let since = (await getMeta('cloudRev')) ?? 0;
   let knownDb = await getMeta('cloudDbId');
+  let renumberSeen = (await getMeta('renumberSeen')) ?? 0;
   let page: PullPage;
   let menuChanged = false;
   let billsChanged = false;
@@ -105,8 +106,22 @@ async function pull(): Promise<boolean> {
       // The shared database was re-created: start this phone's copy again.
       await resetSharedCopy();
       knownDb = undefined;
+      renumberSeen = 0;
       since = 0;
       continue;
+    }
+    if ((page.renumberRev ?? 0) > renumberSeen) {
+      renumberSeen = page.renumberRev ?? 0;
+      if (since > 0) {
+        // Receipt numbers were changed in a way this copy can't follow bill by bill (the one-time
+        // renumbering in date order, or a number that moved into another month): copy everything again.
+        await resetSharedCopy();
+        await setMeta('renumberSeen', renumberSeen);
+        knownDb = undefined;
+        since = 0;
+        continue;
+      }
+      await setMeta('renumberSeen', renumberSeen); // a copy from the start already has the new numbers
     }
     await applyChanges(page);
     menuChanged ||= page.menu.length > 0;

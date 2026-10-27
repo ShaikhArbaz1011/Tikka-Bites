@@ -113,7 +113,7 @@
 }
 .bill-row-main { grid-area: main; display: grid; }
 .bill-no { font-weight: 700; font-variant-numeric: tabular-nums; }
-.bill-when { font-size: 13px; }
+.bill-when, .bill-old-no { font-size: 13px; }
 .bill-meta { grid-area: meta; font-size: 14px; }
 .bill-total { grid-area: total; font-weight: 800; font-variant-numeric: tabular-nums; text-align: right; }
 .bill-row .badge { grid-area: badge; }

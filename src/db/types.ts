@@ -67,6 +67,12 @@ export interface Bill {
   voidedAt?: number;
   /** Added later for an earlier date of the same month (owner request, 24 Oct 2026): when it was typed in. createdAt is the bill's own date. */
   enteredAt?: number;
+  /**
+   * The number this bill was first issued (printed) with, when it has since moved: receipt numbers
+   * follow date order, so a bill entered later for an earlier date moves the later ones up by one
+   * (owner request, 27 Oct 2026). Searching the old number still finds the bill.
+   */
+  oldNo?: string;
 }
 
 export interface Settings {
@@ -139,6 +145,8 @@ export interface MetaMap {
   cloudRev: number;
   /** Which shared database this phone's copy belongs to (changes if it was re-created). */
   cloudDbId: string;
+  /** The server's renumberRev this copy has: a higher one means copy everything again. */
+  renumberSeen: number;
   /** Short random code for this phone, used in temporary offline numbers (OFF-K7Q-0001). */
   deviceTag: string;
   /** Last temporary offline number used on this phone. */

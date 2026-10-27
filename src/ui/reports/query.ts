@@ -35,7 +35,7 @@ export function billMatches(b: Bill, f: ReportFilter): boolean {
   if (f.food === 'nonveg' && !b.hasNonVeg) return false;
   if (f.minPaise !== undefined && b.totalPaise < f.minPaise) return false;
   if (f.maxPaise !== undefined && b.totalPaise > f.maxPaise) return false;
-  if (f.billNo && !b.billNo.includes(f.billNo)) return false;
+  if (f.billNo && !b.billNo.includes(f.billNo) && !b.oldNo?.includes(f.billNo)) return false; // also the number on its paper receipt
   return true;
 }
 

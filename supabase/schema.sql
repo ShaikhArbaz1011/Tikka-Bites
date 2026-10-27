@@ -33,6 +33,9 @@ create table if not exists public.sync_clock (
   db_id uuid not null default gen_random_uuid() -- tells devices if the database was re-created
 );
 alter table public.sync_clock add column if not exists db_id uuid not null default gen_random_uuid();
+-- Goes up when receipt numbers were changed in a way that a device can't follow one bill at a
+-- time (renumber_year_by_date, or a shift across months): devices and the backup copy everything again.
+alter table public.sync_clock add column if not exists renumber_rev bigint not null default 0;
 insert into public.sync_clock (id) values (1) on conflict (id) do nothing;
 
 create or replace function public.take_clock() returns trigger
@@ -474,6 +477,7 @@ begin
     from page;
   return v_out || jsonb_build_object(
     'dbId', v_clock.db_id,
+    'renumberRev', v_clock.renumber_rev,
     'ready', exists (select 1 from public.settings),
     'importOpen', v_clock.import_open,
     'keepFrom', public.keep_from_month(),
@@ -481,6 +485,84 @@ begin
     -- Full page: continue after its last row. Otherwise this page holds every change
     -- up to the clock (same snapshot), so the device is now up to date.
     'rev', case when v_count = v_limit then v_last else greatest(v_clock.rev, v_since) end);
+end $$;
+
+-- ---------- Receipt numbers in date order (owner request, 27 Oct 2026) ----------------
+-- RCPT-2026-0007 → 7 for '2026' (null for any other year, and for the old monthly numbers).
+create or replace function public.yearly_seq(p_bill_no text, p_year text) returns integer
+language sql immutable set search_path = public as $$
+  select case when p_bill_no ~ ('^RCPT-' || p_year || '-[0-9]{4,9}$') then substring(p_bill_no from 11)::integer end
+$$;
+
+create or replace function public.yearly_no(p_year text, p_seq integer) returns text
+language sql immutable set search_path = public as $$
+  select 'RCPT-' || p_year || '-' || lpad(p_seq::text, greatest(4, char_length(p_seq::text)), '0')
+$$;
+
+-- Make room at number p_from of a year: every number from there on moves up by one, top first
+-- (so a number is free before the next bill takes it). A moved bill keeps the number it was
+-- first given as oldNo: that is what its paper receipt shows. Callers hold the clock lock.
+create or replace function public.shift_bill_numbers(p_year text, p_from integer) returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  r record;
+  v_no text;
+begin
+  for r in select bill_no, public.yearly_seq(bill_no, p_year) as seq from public.bills
+            where public.yearly_seq(bill_no, p_year) >= p_from order by 2 desc loop
+    v_no := public.yearly_no(p_year, r.seq + 1);
+    update public.bills
+       set bill_no = v_no,
+           data = data || jsonb_build_object('billNo', v_no, 'oldNo', coalesce(data ->> 'oldNo', r.bill_no))
+     where bill_no = r.bill_no;
+  end loop;
+end $$;
+
+-- Owner only (SQL Editor), once (owner request, 27 Oct 2026): give every bill of a year one series
+-- in date order, RCPT-2026-0001 …, the old monthly numbers (RCPT-202609-0001) included. Each bill
+-- whose number changes keeps the old one as oldNo. Phones and the backup copy everything again.
+--   select public.renumber_year_by_date('2026');
+create or replace function public.renumber_year_by_date(p_year text) returns text
+language plpgsql security definer set search_path = public as $$
+declare
+  r record;
+  v_top integer;
+  v_n integer := 0;
+  v_moved integer := 0;
+  v_no text;
+begin
+  if coalesce(p_year, '') !~ '^[0-9]{4}$' then
+    raise exception 'Give the year, e.g. select public.renumber_year_by_date(''2026'');';
+  end if;
+  perform 1 from public.sync_clock where id = 1 for update;
+  -- 1. Park the year's numbers above every number used below, so step 2 never meets one in use.
+  select greatest(coalesce(max(public.yearly_seq(bill_no, p_year)), 0), count(*)::integer,
+                  coalesce((select last from public.counters where month_key = p_year), 0))
+    into v_top from public.bills where month_key like p_year || '%';
+  for r in select bill_no, public.yearly_seq(bill_no, p_year) as seq from public.bills
+            where public.yearly_seq(bill_no, p_year) is not null loop
+    update public.bills set bill_no = public.yearly_no(p_year, v_top + r.seq) where bill_no = r.bill_no;
+  end loop;
+  -- 2. One series in date order. data.billNo still holds each bill's number from before step 1.
+  for r in select bill_no, coalesce(data ->> 'billNo', bill_no) as was from public.bills
+            where month_key like p_year || '%' order by created_at, 2 loop
+    v_n := v_n + 1;
+    v_no := public.yearly_no(p_year, v_n);
+    if v_no <> r.was then v_moved := v_moved + 1; end if;
+    update public.bills
+       set bill_no = v_no,
+           data = case when v_no = r.was then data
+                       else data || jsonb_build_object('billNo', v_no, 'oldNo', coalesce(data ->> 'oldNo', r.was)) end
+     where bill_no = r.bill_no;
+  end loop;
+  if v_n = 0 then
+    return 'No bills in ' || p_year || ': nothing changed.';
+  end if;
+  insert into public.counters as c (month_key, last) values (p_year, v_n)
+    on conflict (month_key) do update set last = excluded.last;
+  update public.sync_clock set renumber_rev = renumber_rev + 1 where id = 1;
+  return v_n || ' bills of ' || p_year || ' are now ' || public.yearly_no(p_year, 1) || ' … ' || public.yearly_no(p_year, v_n)
+    || ' in date order (' || v_moved || ' got a new number and keep the old one as "Old no.").';
 end $$;
 
 -- ---------- save_bill: check a bill and give it the next receipt number ----------
@@ -525,6 +607,7 @@ declare
   v_printed text;
   v_entered bigint;
   v_year text;
+  v_place integer;
 begin
   perform public.require_staff();
   if jsonb_typeof(p_bill) is distinct from 'object' or jsonb_typeof(p_bill -> 'items') is distinct from 'array'
@@ -533,6 +616,10 @@ begin
   end if;
   -- Same lock order as every other writer; reading the menu after it sees the latest prices.
   perform 1 from public.sync_clock where id = 1 for update;
+  -- The time is read after the lock, so bills saved one after another are never out of date order.
+  v_now := clock_timestamp();
+  v_local := v_now at time zone 'Asia/Kolkata';
+  v_month := to_char(v_local, 'YYYYMM');
 
   if p_bill ? 'clientRef' then
     if coalesce(p_bill ->> 'clientRef', '') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
@@ -667,16 +754,30 @@ begin
     raise exception 'Some text in the bill is too long' using errcode = 'P0001';
   end if;
 
-  -- One counter per year (India time): RCPT-2026-0001 … and RCPT-2027-0001 from 1 January.
+  -- One count per year (India time): RCPT-2026-0001 … and RCPT-2027-0001 from 1 January.
+  -- Numbers follow the date (owner request, 27 Oct 2026): a bill dated before bills that already
+  -- have numbers (added later for an earlier day, or uploaded late from an offline phone) takes
+  -- the number of the first of them, and the later ones move up by one.
   v_year := to_char(v_local, 'YYYY');
+  v_at_ms := coalesce(v_at_ms, floor(extract(epoch from v_now) * 1000)::bigint);
   insert into public.counters as c (month_key, last) values (v_year, 1)
     on conflict (month_key) do update set last = c.last + 1
     returning c.last into v_seq;
-  v_no := 'RCPT-' || v_year || '-' || lpad(v_seq::text, greatest(4, char_length(v_seq::text)), '0');
+  select min(public.yearly_seq(bill_no, v_year)) into v_place
+    from public.bills where created_at > v_at_ms and public.yearly_seq(bill_no, v_year) is not null;
+  if v_place is not null then
+    -- A number that moves into another month: devices and the backup can't follow it one bill at a time.
+    if exists (select 1 from public.bills where public.yearly_seq(bill_no, v_year) >= v_place and month_key <> v_month) then
+      update public.sync_clock set renumber_rev = renumber_rev + 1 where id = 1;
+    end if;
+    perform public.shift_bill_numbers(v_year, v_place);
+    v_seq := v_place;
+  end if;
+  v_no := public.yearly_no(v_year, v_seq);
 
   v_bill := jsonb_strip_nulls(jsonb_build_object(
     'billNo', v_no,
-    'createdAt', coalesce(v_at_ms, floor(extract(epoch from v_now) * 1000)::bigint),
+    'createdAt', v_at_ms,
     'monthKey', v_month,
     'hour', extract(hour from v_local)::integer,
     'weekday', extract(dow from v_local)::integer,
@@ -705,9 +806,13 @@ begin
 end $$;
 
 -- ---------- void_bill: cancel a bill, keeping it for the audit trail ----------------
-create or replace function public.void_bill(p_bill_no text, p_reason text) returns jsonb
+-- p_created_at (the bill's time, as the phone has it) makes sure it is still the same bill:
+-- its number may have moved up since the phone last synced (numbers follow the date).
+drop function if exists public.void_bill(text, text); -- replaced by the version with p_created_at
+create or replace function public.void_bill(p_bill_no text, p_reason text, p_created_at bigint default null) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare
+  v_at bigint;
   v_reason text := btrim(regexp_replace(coalesce(p_reason, ''), '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]', '', 'g'));
   v_status text;
   v_data jsonb;
@@ -720,8 +825,12 @@ begin
     raise exception 'Reason must be at most 200 characters' using errcode = 'P0001';
   end if;
   perform 1 from public.sync_clock where id = 1 for update;
-  select status into v_status from public.bills where bill_no = p_bill_no for update;
+  select status, created_at into v_status, v_at from public.bills where bill_no = p_bill_no for update;
   if not found then raise exception 'Bill not found' using errcode = 'P0001'; end if;
+  if p_created_at is not null and v_at <> p_created_at then
+    raise exception 'The receipt numbers have changed (a bill for an earlier time was added). Wait a moment for this phone to update, then try again.'
+      using errcode = 'P0001';
+  end if;
   if v_status = 'void' then raise exception 'Bill is already voided' using errcode = 'P0001'; end if;
   update public.bills
      set status = 'void',
@@ -837,7 +946,9 @@ revoke all on function
   public.login_email(text), public.keep_from_month(), public.purge_old_months(),
   public.keep_from_month_at(timestamptz), public.purge_months_before(text),
   public.is_staff(), public.pull_changes(bigint, integer), public.patch_settings(jsonb, text[]),
-  public.save_bill(jsonb), public.void_bill(text, text),
+  public.save_bill(jsonb), public.void_bill(text, text, bigint),
+  public.yearly_seq(text, text), public.yearly_no(text, integer), public.shift_bill_numbers(text, integer),
+  public.renumber_year_by_date(text),
   public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import(),
   public.make_super_admin(text), public.my_role(), public.require_super_admin(), public.list_staff(),
   public.staff_add_prepare(text), public.staff_add_finish(uuid, text), public.staff_remove(text), public.staff_user_id(text)
@@ -845,7 +956,7 @@ revoke all on function
 grant execute on function
   public.now_ms(), -- used by column defaults, which run as the caller
   public.is_staff(), public.pull_changes(bigint, integer), public.patch_settings(jsonb, text[]),
-  public.save_bill(jsonb), public.void_bill(text, text),
+  public.save_bill(jsonb), public.void_bill(text, text, bigint),
   public.import_device_data(jsonb, jsonb, jsonb, jsonb), public.import_bills(jsonb), public.finish_import(),
   public.keep_from_month(), public.keep_from_month_at(timestamptz), public.purge_old_months(),
   public.my_role(), public.list_staff(), -- the rest check for the super admin inside:
@@ -970,6 +1081,8 @@ begin
     from page;
   return v_out || jsonb_build_object(
     'dbId', v_clock.db_id,
+    'renumberRev', v_clock.renumber_rev,
+    'keepFrom', public.keep_from_month(),
     'more', v_count = v_limit,
     'rev', case when v_count = v_limit then v_last else greatest(v_clock.rev, v_since) end,
     'counts', case when v_count = v_limit then null else

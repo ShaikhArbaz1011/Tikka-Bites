@@ -80,6 +80,17 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
   - Counters are keyed by year (`YYYY`). Old `RCPT-YYYYMM-` and `INV-YYYYMM-` numbers (and their month counters) stay valid everywhere and are never issued again.
   - A yearly number does not name its month: use the bill's `monthKey`, never the number, to find its month (`billNoParts` in `Code.gs`, `parseBillNo` in `src/core/billNo.ts`).
   - The 3-month clean-up deletes a year counter only once its whole year is cleared.
+- Receipt numbers follow the date (owner request, 27 Oct 2026). Some bills are dated before bills that already have numbers (entered later for an earlier date, or uploaded late from an offline phone). Such a bill takes the number of the first of those bills, and every later number of that year moves up by one.
+  - A normal bill is always the newest (SQL reads the time after the clock lock).
+  - A moved bill keeps the number it was first given (the one on its paper receipt) as `oldNo`. The receipt, the PDF, the bill list, search and the Excel export show it.
+  - The same rule lives in three places: `takePlace` (`db/billRepo.ts`), SQL `save_bill` → `shift_bill_numbers`, and `opSaveBill` → `placeFor` / `moveUp` (`Code.gs`).
+  - Phones follow moves bill by bill: `applyChanges` takes whatever was under a number out of the totals.
+  - When numbers move across months, or after `renumber_year_by_date`, the server bumps `renumber_rev`. Phones and the Supabase backup sheet then copy everything again.
+  - `void_bill` also gets the bill's `createdAt`, so a phone with old numbers can't cancel the wrong bill.
+  - `renumber_year_by_date('YYYY')` (SQL Editor only) gives a year's bills one series in date order, old monthly numbers included.
+- Times show on a 12-hour clock with AM/PM everywhere (owner request, 27 Oct 2026).
+  - Code: `formatTime12` / `formatDateTime`, Excel `hh:mm AM/PM`, and `timeText` in `Code.gs`.
+  - The bill-date picker uses hour / minute / AM-PM selects, whatever the phone's own clock setting.
 - Bills forgotten earlier **this month** can be entered with their date (owner request, 24 Oct 2026; `src/ui/billing/billDate.ts`).
   - The draft carries `billedAt`. The server checks it is this month (IST) and not in the future, charges today's prices, and stores `enteredAt` (when it was typed in).
   - Only a date the cashier picked counts as earlier; a screen left open past midnight still bills "now".

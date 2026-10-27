@@ -50,7 +50,7 @@ describe('backup round trip', () => {
     expect((await listMenu()).map((d) => d.name).sort()).toEqual(['Dosa', 'Fish Fry']);
     expect((await getSettings()).name).toBe('Dosa Corner');
     // Counter continues after the restored bills.
-    const next = await saveBill({ items: [{ menuId: (await listMenu())[0]!.id, qty: 1 }], orderType: 'takeaway', paymentMode: 'cash', discount: NO_DISCOUNT }, SEP);
+    const next = await saveBill({ items: [{ menuId: (await listMenu())[0]!.id, qty: 1 }], orderType: 'takeaway', paymentMode: 'cash', discount: NO_DISCOUNT }, SEP + 3000);
     expect(next.billNo).toBe('RCPT-2026-0004');
   });
 

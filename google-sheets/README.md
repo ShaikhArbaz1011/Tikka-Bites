@@ -101,8 +101,11 @@ The app keeps using Supabase as before; nothing changes on the phones. Every nig
   - items (qty × rate = amount), item count, categories, veg / non-veg
   - subtotal, discount (₹ or %) and discount ₹, round-off, total
   - status, void reason and time, saved by, offline number, receipt line
+  - when it was entered (for a bill added later for an earlier date), and its old number (see below)
 
   Month tabs made with the earlier, shorter columns are rebuilt by themselves on the next copy, from the hidden Data copy, so nothing is lost.
+- **Receipt numbers follow the date** (owner request, 27 Oct 2026). A bill added later for an earlier time takes its place, and the later numbers move up by one. Each moved bill shows the number printed on its paper receipt in **Old no.** Times are shown as 12-hour clock times with AM/PM ("02:30 PM").
+  - When Supabase renumbers bills in a way that can't be copied one bill at a time, the next copy empties this month and the 2 before it and copies them again. This happens after the one-time clean-up, or when a number moves into another month. Older months stay as they were.
 - **Every month stays here for good.** Supabase and the phones keep only the last 3 months, so this sheet is the only place older bills are kept, apart from Excel exports.
 - **It only reads Supabase.** It asks `public.backup_pull()` (in `supabase/schema.sql`) for what changed since the last copy. That function can't change anything.
   - It needs a long random **backup key**, which only this script knows.

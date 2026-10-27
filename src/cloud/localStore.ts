@@ -27,6 +27,9 @@ const TAG_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
  * Apply server changes in ONE transaction. A server bill that stands for a bill
  * this phone made offline (same printed OFF- number, or `replaces`) takes its
  * place: the temporary bill is removed and the totals move over, never counted twice.
+ * A number can also come back holding another bill (numbers follow the date, so a bill
+ * added for an earlier time pushes the later ones up by one): whatever this phone had
+ * under that number is taken out of the totals and the server's bill is put in.
  */
 export async function applyChanges(c: Changes, replaces?: Map<string, string>): Promise<void> {
   const db = await getDB();
@@ -67,16 +70,16 @@ export async function applyChanges(c: Changes, replaces?: Map<string, string>): 
           outbox = outbox.filter((n) => n !== tempNo);
         }
       }
-      // 2. The server bill itself: new, or a change (e.g. voided on another phone).
+      // 2. The server bill itself: new, a change (e.g. voided on another phone), or a bill that moved to this number.
       const existing = await bills.get(b.billNo);
-      const s = await statsFor(b.monthKey);
-      if (!existing) {
-        if (b.status === 'paid') applyBill(s, b, 1);
-        else s.voidCount += 1;
-      } else if (existing.status === 'paid' && b.status === 'void') {
-        applyBill(s, existing, -1);
-        s.voidCount += 1;
+      if (existing) {
+        const old = await statsFor(existing.monthKey);
+        if (existing.status === 'paid') applyBill(old, existing, -1);
+        else old.voidCount -= 1;
       }
+      const s = await statsFor(b.monthKey);
+      if (b.status === 'paid') applyBill(s, b, 1);
+      else s.voidCount += 1;
       await bills.put(b);
     }
     if (outbox.length !== outboxBefore) await meta.put(outbox, 'outbox');
@@ -179,6 +182,7 @@ export async function resetSharedCopy(): Promise<void> {
   await meta.put(keep.map((b) => b.billNo), 'outbox');
   await meta.delete('cloudRev');
   await meta.delete('cloudDbId');
+  await meta.delete('renumberSeen');
   await tx.done;
 }
 

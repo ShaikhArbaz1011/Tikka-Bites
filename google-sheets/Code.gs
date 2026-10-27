@@ -151,9 +151,10 @@ function dayText(ms) {
   const t = ist(ms);
   return pad(t.d, 2) + '-' + pad(t.mo, 2) + '-' + t.y;
 }
+/** "02:30 PM": 12-hour clock with AM/PM, India time (owner request, 27 Oct 2026). */
 function timeText(ms) {
   const t = ist(ms);
-  return pad(t.h, 2) + ':' + pad(t.mi, 2);
+  return pad(t.h % 12 === 0 ? 12 : t.h % 12, 2) + ':' + pad(t.mi, 2) + ' ' + (t.h < 12 ? 'AM' : 'PM');
 }
 function billsTab(monthKey) {
   return 'Bills ' + monthKey.slice(0, 4) + '-' + monthKey.slice(4);
@@ -220,11 +221,17 @@ function billCells(r) {
     b.status === 'void' ? 'Void' : 'Paid', b.voidReason || '', typeof b.voidedAt === 'number' ? dayText(b.voidedAt) + ' ' + timeText(b.voidedAt) : '',
     r.by || '', b.printedAs || '', b.cheesyLine || '',
     typeof b.enteredAt === 'number' ? dayText(b.enteredAt) + ' ' + timeText(b.enteredAt) : '',
+    b.oldNo || '',
   ];
 }
 
 /** Earlier bill-tab headers (oldest first). Tabs with one of these are rebuilt from their Data column (upgradeTab). */
 const OLD_BILL_HEADS = [
+  [
+    'Receipt no', 'Date', 'Time', 'Day', 'Order type', 'Table', 'Customer', 'Payment', 'Items (qty × rate = amount)', 'Item count', 'Categories', 'Veg / Non-veg',
+    'Subtotal ₹', 'Discount', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Voided at', 'Saved by', 'Printed as', 'Receipt line',
+    'Entered on (if added later)', 'Rev', 'Client ref', 'Data', 'Data 2',
+  ],
   [
     'Receipt no', 'Date', 'Time', 'Day', 'Order type', 'Table', 'Customer', 'Payment', 'Items (qty × rate = amount)', 'Item count', 'Categories', 'Veg / Non-veg',
     'Subtotal ₹', 'Discount', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Voided at', 'Saved by', 'Printed as', 'Receipt line', 'Rev', 'Client ref', 'Data', 'Data 2',
@@ -270,9 +277,9 @@ const SPECS = {
     head: [
       'Receipt no', 'Date', 'Time', 'Day', 'Order type', 'Table', 'Customer', 'Payment', 'Items (qty × rate = amount)', 'Item count', 'Categories', 'Veg / Non-veg',
       'Subtotal ₹', 'Discount', 'Discount ₹', 'Round-off ₹', 'Total ₹', 'Status', 'Void reason', 'Voided at', 'Saved by', 'Printed as', 'Receipt line',
-      'Entered on (if added later)',
+      'Entered on (if added later)', 'Old no. (on the paper receipt)',
     ],
-    fmt: ['@', '@', '@', '@', '@', '@', '@', '@', '@', '0', '@', '@', '0.00', '@', '0.00', '0.00', '0.00', '@', '@', '@', '@', '@', '@', '@'],
+    fmt: ['@', '@', '@', '@', '@', '@', '@', '@', '@', '0', '@', '@', '0.00', '@', '0.00', '0.00', '0.00', '@', '@', '@', '@', '@', '@', '@', '@'],
     rev: true, extra: ['Client ref'], cells: 2, old: OLD_BILL_HEADS,
     key: (r) => r.bill.billNo,
     show: billCells,
@@ -698,20 +705,78 @@ class Db {
     return null;
   }
 
-  /**
-   * The highest number of a year so far, from the last row of each of its month tabs (belt and
-   * braces next to the Counters tab): numbers only go up, so a tab's last row holds its highest.
-   */
+  /** The highest number of a year so far, from the receipt-number column of its month tabs (belt and braces next to the Counters tab). */
   lastSeq(year) {
     let top = 0;
     this.monthTabs().forEach((t) => {
       if (t.month.slice(0, 4) !== year) return;
       const sh = this.sheet(t.name, SPECS.bills, false);
       if (!sh || sh.getLastRow() < 2) return;
-      const p = billNoParts(sh.getRange(sh.getLastRow(), 1).getValue());
-      if (p && p.key === year) top = Math.max(top, p.seq);
+      sh.getRange(2, 1, sh.getLastRow() - 1, 1).getValues().forEach((v) => {
+        const p = billNoParts(v[0]);
+        if (p && p.key === year) top = Math.max(top, p.seq);
+      });
     });
     return top;
+  }
+
+  /**
+   * Receipt numbers follow the date (owner request, 27 Oct 2026; same rule as SQL save_bill).
+   * A bill at `at` takes the lowest number among the year's bills dated after it; those from that
+   * number on move up by one. Returns { place, moving } (moving: { sh, row, seq, rec, rev }), or
+   * null when nothing of the year is dated after it (it gets the next number).
+   */
+  placeFor(year, at) {
+    const spec = SPECS.bills;
+    const L = layout(spec);
+    const rows = [];
+    let place = Infinity;
+    this.monthTabs().forEach((t) => {
+      if (t.month.slice(0, 4) !== year) return;
+      const sh = this.sheet(t.name, spec, false);
+      const last = sh ? sh.getLastRow() : 0;
+      if (last < 2) return;
+      sh.getRange(2, 1, last - 1, L.width).getValues().forEach((v, i) => {
+        const n = billNoParts(v[0]);
+        if (!n || n.key !== year) return;
+        const p = parseRow(spec, v, this.label + ' › ' + t.name + ' row ' + (i + 2));
+        if (!p) return;
+        rows.push({ sh, row: i + 2, seq: n.seq, rec: p.rec, rev: p.rev });
+        if (p.rec.bill.createdAt > at && n.seq < place) place = n.seq;
+      });
+    });
+    if (place === Infinity) return null;
+    return { place, moving: rows.filter((r) => r.seq >= place) };
+  }
+
+  /**
+   * Give each of these bills the next number up, in its own row (rows never move). Newest month
+   * first, one write per tab: a crash in between leaves a gap, never the same number twice.
+   * Each keeps the number it was first given (oldNo): that is what its paper receipt shows.
+   */
+  moveUp(year, moving, firstRev) {
+    const spec = SPECS.bills;
+    const L = layout(spec);
+    const tabs = {};
+    moving.forEach((m) => (tabs[m.sh.getName()] = tabs[m.sh.getName()] || []).push(m));
+    let rev = firstRev;
+    Object.keys(tabs).sort().reverse().forEach((name) => {
+      const list = tabs[name].sort((a, b) => a.row - b.row);
+      const sh = list[0].sh;
+      const lo = list[0].row;
+      const block = sh.getRange(lo, 1, list[list.length - 1].row - lo + 1, L.width).getValues();
+      const keys = [];
+      const values = [];
+      list.forEach((m) => {
+        const bill = Object.assign({}, m.rec.bill, { billNo: 'RCPT-' + year + '-' + pad(m.seq + 1, 4), oldNo: m.rec.bill.oldNo || m.rec.bill.billNo });
+        const row = buildRow(spec, Object.assign({}, m.rec, { bill }), rev++, 'This bill');
+        block[m.row - lo] = row;
+        keys.push(m.rec.bill.billNo); // the Backup finds the same rows by the numbers they had
+        values.push(row);
+      });
+      sh.getRange(lo, 1, block.length, L.width).setValues(block);
+      this.log.push({ type: 'put', kind: 'bills', tab: name, keys, values });
+    });
   }
 
   addBills(month, items) {
@@ -924,13 +989,34 @@ function copyRows(main, b, kind, tab, fromRev) {
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, L.width).getValues();
   const keys = [];
   const rows = [];
+  const all = {};
   values.forEach((v) => {
     if (v[L.dataCol - 1] === '' || v[L.dataCol - 1] === null) return; // empty row
+    all[String(v[0])] = true;
     if (spec.rev && fromRev >= 0 && !(Number(v[L.revCol - 1]) > fromRev)) return;
     keys.push(String(v[0]));
     rows.push(v);
   });
-  if (rows.length) upsertValues(b.sheet(tab, spec, true), spec, keys, rows);
+  const bsh = b.sheet(tab, spec, true);
+  if (rows.length) upsertValues(bsh, spec, keys, rows);
+  if (kind === 'bills') clearOthers(bsh, L, all);
+}
+
+/**
+ * Remove the Backup rows of a month that Main no longer has under that number. Numbers move when
+ * an earlier bill is added; a Backup that missed those changes would otherwise keep the old rows.
+ */
+function clearOthers(sh, L, keep) {
+  const last = sh.getLastRow();
+  if (last < 2) return;
+  const gone = [];
+  sh.getRange(2, 1, last - 1, 1).getValues().forEach((v, i) => {
+    if (v[0] !== '' && v[0] !== null && !keep[String(v[0])]) gone.push(i + 2);
+  });
+  gone.reverse().forEach((row) => {
+    if (sh.getMaxRows() - 1 > 1) sh.deleteRows(row, 1); // bottom first, so the row numbers above stay right
+    else sh.getRange(row, 1, 1, L.width).clearContent(); // a tab keeps one row under its header
+  });
 }
 
 // ============================================================================
@@ -1341,10 +1427,15 @@ function opSaveBill(db, a, who) {
   // Reserve the numbers first (clock + receipt counter), flushed before the bill is written:
   // a crash after this can only skip a number, never give the same one twice.
   // One count per year (India time): RCPT-2026-0001 …, and RCPT-2027-0001 from 1 January.
+  // Numbers follow the date (owner request, 27 Oct 2026): a bill added later for an earlier time,
+  // or uploaded late from an offline phone, takes the number of the first bill dated after it, and
+  // the later ones move up by one. A normal bill is the newest, so only those two look.
   const counter = db.find('counters', year);
   const seq = Math.max(counter ? Number(counter.rec.last) || 0 : 0, db.lastSeq(year)) + 1;
-  const billNo = 'RCPT-' + year + '-' + pad(seq, 4);
-  const firstRev = db.reserve(used.length + 1);
+  const spot = at < now ? db.placeFor(year, at) : null;
+  const moving = spot ? spot.moving : [];
+  const billNo = 'RCPT-' + year + '-' + pad(spot ? spot.place : seq, 4);
+  const firstRev = db.reserve(used.length + moving.length + 1);
   db.put('counters', [{ rec: { monthKey: year, last: seq }, rev: 0 }]);
   SpreadsheetApp.flush();
 
@@ -1355,7 +1446,8 @@ function opSaveBill(db, a, who) {
     categories: cats, hasVeg: veg, hasNonVeg: nonVeg, cheesyLine: cheesy, printedAs: printed, status: 'paid', enteredAt: entered,
   });
   if (used.length) db.put('menu', used.map((r, i) => ({ rec: Object.assign({}, r.rec, { used_in_bills: true }), rev: firstRev + i })));
-  db.addBills(month, [{ rec: { bill, by: who.username, ref }, rev: firstRev + used.length }]);
+  if (moving.length) db.moveUp(year, moving, firstRev + used.length);
+  db.addBills(month, [{ rec: { bill, by: who.username, ref }, rev: firstRev + used.length + moving.length }]);
   return bill;
 }
 
@@ -1367,6 +1459,11 @@ function opVoidBill(db, a) {
   const found = db.findBill(txt(a.p_bill_no) || '');
   if (!found) refuse('Bill not found');
   const bill = found.rec.bill;
+  // The phone sends the bill's time: its number may have moved up since it last synced.
+  const at = txt(a.p_created_at);
+  if (at !== null && at !== '' && String(bill.createdAt) !== at) {
+    refuse('The receipt numbers have changed (a bill for an earlier time was added). Wait a moment for this phone to update, then try again.');
+  }
   if (bill.status === 'void') refuse('Bill is already voided');
   const rev = db.reserve(1);
   const next = Object.assign({}, bill, { status: 'void', voidReason: reason, voidedAt: Date.now() });
@@ -2396,6 +2493,15 @@ function sbApply(db, prep, page) {
   db.setMeta({ rev: Math.max(db.clock(), Number(page.rev)), dbId: page.dbId });
 }
 
+/** Empty the bill tabs of the months Supabase still keeps (from keepFrom on), header kept. */
+function sbClearKept(db, keepFrom) {
+  db.monthTabs().forEach((t) => {
+    if (t.month < keepFrom) return;
+    const sh = db.billSheet(t.month, false);
+    if (sh && sh.getLastRow() >= 2) sh.getRange(2, 1, sh.getLastRow() - 1, layout(SPECS.bills).width).clearContent();
+  });
+}
+
 /** Every month Supabase still has must be complete here. If not, everything is copied again. */
 function sbCompare(db, counts, report) {
   if (!isObj(counts)) return;
@@ -2445,6 +2551,17 @@ function supabaseBackup() {
           db = sbNewFile(SB.FILE + ' (from ' + isoDate(Date.now()) + ')');
           since = 0;
           report.push('Supabase is a new database (re-created, or another project), so a new backup file was started. The old file is kept as it is.');
+          continue;
+        }
+        const renumbered = Number(page.renumberRev) || 0;
+        if (renumbered > (Number(getProp('SB_RENUM')) || 0)) {
+          // Supabase gave its bills new numbers (the one-time renumbering in date order, or numbers
+          // that moved across months): empty the months it still has and copy them again.
+          sbClearKept(db, String(page.keepFrom || keepFromAt(Date.now())));
+          SpreadsheetApp.flush();
+          setProps({ SB_REV: '0', SB_RENUM: String(renumbered), SB_DBID: page.dbId });
+          report.push('Supabase changed receipt numbers, so this month and the 2 before it were copied again. Older months are kept as they were.');
+          since = 0;
           continue;
         }
         sbApply(db, prep, page);

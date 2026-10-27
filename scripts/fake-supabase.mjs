@@ -44,7 +44,7 @@ const FUNCS = {
   login_email: { p_username: 'text' },
   pull_changes: { p_since: 'bigint', p_limit: 'integer' },
   save_bill: { p_bill: 'jsonb' },
-  void_bill: { p_bill_no: 'text', p_reason: 'text' },
+  void_bill: { p_bill_no: 'text', p_reason: 'text', p_created_at: 'bigint' },
   patch_settings: { p_set: 'jsonb', p_unset: 'text[]' },
   purge_old_months: {},
   import_device_data: { p_menu: 'jsonb', p_lines: 'jsonb', p_settings: 'jsonb', p_counters: 'jsonb' },

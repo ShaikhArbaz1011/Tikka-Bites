@@ -124,6 +124,36 @@ test('shared database: sign-in, setup, two phones, offline bill, fingerprint, vo
   await p2.getByRole('link', { name: 'Reports', exact: true }).click();
   await expect(kpiBills(p2)).toHaveText('1');
 
+  // ---------- Numbers follow the date (owner request, 27 Oct 2026) ----------
+  // Phone 1 adds a bill forgotten on the 1st: it takes number 0001 and the later bills move up by one.
+  const today = psql("select to_char(now() at time zone 'Asia/Kolkata', 'YYYY-MM-DD')");
+  if (!today.endsWith('-01')) {
+    const year = today.slice(0, 4);
+    await p1.getByRole('link', { name: 'Billing', exact: true }).click();
+    await p1.locator('.dish-card', { hasText: 'Chicken Tikka Wrap' }).first().click();
+    await p1.getByLabel('Bill date').fill(`${today.slice(0, 8)}01`);
+    await p1.getByLabel('Hour').selectOption('9');
+    await p1.getByLabel('Minute').selectOption('00');
+    await p1.getByLabel('AM or PM').selectOption('AM');
+    await p1.getByRole('button', { name: 'Save', exact: true }).click();
+    const d1 = p1.locator('dialog[open]');
+    await expect(d1.locator('.modal-title')).toHaveText(`Receipt RCPT-${year}-0001`);
+    await d1.getByRole('button', { name: 'Done' }).click();
+    await p1.getByRole('button', { name: 'Today' }).click();
+    expect(psql("select string_agg(bill_no || ' ' || coalesce(data->>'oldNo', '-'), ', ' order by created_at) from public.bills")).toBe(
+      `RCPT-${year}-0001 -, RCPT-${year}-0002 RCPT-${year}-0001, RCPT-${year}-0003 RCPT-${year}-0002`,
+    );
+    // Phone 2 follows on its next sync: the moved bills under their new numbers, totals exact.
+    await p2.reload();
+    await appReady(p2);
+    await expect(pill(p2)).toHaveText('Synced', { timeout: 30_000 });
+    await p2.getByRole('link', { name: 'Reports', exact: true }).click();
+    await expect(kpiBills(p2)).toHaveText('2');
+    await expect(p2.locator('.bill-row', { hasText: `RCPT-${year}-0002` }).locator('.bill-old-no')).toHaveText(`was RCPT-${year}-0001`);
+    const no1 = p2.locator('.bill-row').filter({ has: p2.locator('.bill-no', { hasText: new RegExp(`^RCPT-${year}-0001$`) }) });
+    await expect(no1.locator('.bill-when')).toContainText('09:00 AM');
+  }
+
   // ---------- Only 3 months are kept ----------
   const old = psql("select to_char(date_trunc('month', now() at time zone 'Asia/Kolkata') - interval '3 months', 'YYYYMM')");
   psql(`insert into public.bills (bill_no, created_at, month_key, status, data) values ('RCPT-${old}-0001', 1, '${old}', 'paid',

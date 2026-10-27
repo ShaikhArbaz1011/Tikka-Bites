@@ -78,9 +78,17 @@ export function daysIn(r: Range): number {
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
+/** "02:30 PM": 12-hour clock with AM/PM (owner request, 27 Oct 2026). 12:05 at night is "12:05 AM". */
+export function formatTime12(t: number): string {
+  const d = new Date(t);
+  const h = d.getHours();
+  return `${pad(h % 12 === 0 ? 12 : h % 12)}:${pad(d.getMinutes())} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/** "20/10/2026 02:30 PM". The first 10 characters are always the date. */
 export function formatDateTime(t: number): string {
   const d = new Date(t);
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${formatTime12(t)}`;
 }
 
 export function formatDateISO(t: number): string {

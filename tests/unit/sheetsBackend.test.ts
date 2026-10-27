@@ -196,7 +196,7 @@ describe('bills: the same rules as the SQL server', () => {
     // The readable columns, for people
     const row = g.rows(g.main(), 'Bills 2026-09')[0]!;
     expect(row.slice(0, 23)).toEqual([
-      `RCPT-${Y}-0001`, '25-09-2026', '13:00', 'Friday', 'Dine-in', '4', 'Asha', 'UPI',
+      `RCPT-${Y}-0001`, '25-09-2026', '01:00 PM', 'Friday', 'Dine-in', '4', 'Asha', 'UPI',
       '2 × Full Chicken @ ₹450 = ₹900; 1 × Masala Fries @ ₹120.50 = ₹120.50', 3, 'Grill Gali, Aloo Ke Laloo', 'Veg + Non-veg',
       1020.5, '10%', 102.05, -0.45, 918, 'Paid', '', '', 'owner', '', 'Totally worth it 😋',
     ]);
@@ -273,7 +273,7 @@ describe('bills: the same rules as the SQL server', () => {
     const v = ok(call('void_bill', { p_bill_no: b.billNo, p_reason: '  Wrong table\u0007 ' }));
     expect(v).toMatchObject({ status: 'void', voidReason: 'Wrong table', voidedAt: NOW });
     expect(billTab(g.main())[0]!.bill.status).toBe('void');
-    expect(g.rows(g.main(), 'Bills 2026-09')[0]!.slice(17, 20)).toEqual(['Void', expect.any(String), expect.stringMatching(/^\d\d-\d\d-2026 \d\d:\d\d$/)]);
+    expect(g.rows(g.main(), 'Bills 2026-09')[0]!.slice(17, 20)).toEqual(['Void', expect.any(String), expect.stringMatching(/^\d\d-\d\d-2026 \d\d:\d\d [AP]M$/)]);
     refused(call('void_bill', { p_bill_no: b.billNo, p_reason: 'again' }), 'already voided');
     refused(call('void_bill', { p_bill_no: b.billNo, p_reason: 'no' }), 'at least 3 characters');
     refused(call('void_bill', { p_bill_no: 'RCPT-190001-0001', p_reason: 'nope' }), 'Bill not found');
@@ -537,7 +537,7 @@ describe('keep 3 months: Main clears old months, the Backup keeps them all', () 
     const status = g.control.getSheetByName('Status')!.dump().slice(1, 4).map((r) => [r[1], r[2]]);
     expect(status).toEqual([
       ['Nightly', 'Backup sheet: up to date'],
-      ['Nightly', expect.stringMatching(/^Copy saved: Tikka Bites – Main 2026-10-1\d 13\.00$/)],
+      ['Nightly', expect.stringMatching(/^Copy saved: Tikka Bites – Main 2026-10-1\d 01\.00 PM$/)],
       ['Nightly', 'Check: everything is fine'],
     ]);
   });
@@ -733,21 +733,69 @@ describe('receipt numbers per year, and bills entered later for an earlier date 
   const istMs = (y: number, m: number, d: number, h = 0, min = 0) => Date.UTC(y, m - 1, d, h, min) - 5.5 * HOUR;
   const head = () => g.main().getSheetByName('Bills 2026-09')!.dump()[0]!;
 
-  it("a bill forgotten earlier this month is saved under its date, at today's prices, numbered in the year", () => {
+  it("a bill forgotten earlier this month is saved under its date, at today's prices, numbered in date order", () => {
     ok(save(body([[1, 1, 45000]]))); // RCPT-2026-0001 on 25 Sep
     const at = istMs(2026, 9, 20, 14, 30);
     const b = ok(save({ ...body([[2, 1, 12050]]), billedAt: at }));
-    expect(b).toMatchObject({ billNo: `RCPT-${Y}-0002`, createdAt: at, monthKey: M, hour: 14, weekday: 0, enteredAt: NOW }); // 20 Sep 2026 is a Sunday
+    expect(b).toMatchObject({ billNo: `RCPT-${Y}-0001`, createdAt: at, monthKey: M, hour: 14, weekday: 0, enteredAt: NOW }); // 20 Sep 2026 is a Sunday
     const row = g.rows(g.main(), 'Bills 2026-09')[1]!;
-    expect(row.slice(0, 3)).toEqual([`RCPT-${Y}-0002`, '20-09-2026', '14:30']);
-    expect(row[head().indexOf('Entered on (if added later)')]).toBe('25-09-2026 13:00');
-    expect(g.rows(g.main(), 'Bills 2026-09')[0]![head().indexOf('Entered on (if added later)')]).toBe('');
+    expect(row.slice(0, 3)).toEqual([`RCPT-${Y}-0001`, '20-09-2026', '02:30 PM']);
+    expect(row[head().indexOf('Entered on (if added later)')]).toBe('25-09-2026 01:00 PM');
+    // The 25 Sep bill keeps its row, moves up a number and shows the one on its paper receipt.
+    const first = g.rows(g.main(), 'Bills 2026-09')[0]!;
+    expect(first.slice(0, 3)).toEqual([`RCPT-${Y}-0002`, '25-09-2026', '01:00 PM']);
+    expect(first[head().indexOf('Old no. (on the paper receipt)')]).toBe(`RCPT-${Y}-0001`);
+    expect(first[head().indexOf('Entered on (if added later)')]).toBe('');
     refused(save({ ...body([[1, 1, 45000]]), billedAt: istMs(2026, 8, 31, 23, 0) }), 'only be added for this month');
     refused(save({ ...body([[1, 1, 45000]]), billedAt: NOW + 2 * HOUR }), "can't be in the future");
     refused(save({ ...body([[1, 1, 45000]]), billedAt: 'yesterday' }), 'Invalid bill date');
     refused(save({ ...body([[1, 1, 40000]]), billedAt: at }), 'was changed on another device'); // today's prices, like any online bill
     expect(counter(g.main())).toBe(2); // refused bills use up no number
-    expect(ok(call('pull_changes', { p_since: 0 })).bills.map((x: { billNo: string }) => x.billNo)).toEqual([`RCPT-${Y}-0001`, `RCPT-${Y}-0002`]);
+    expect(ok(call('pull_changes', { p_since: 0 })).bills.map((x: { billNo: string }) => x.billNo)).toEqual([`RCPT-${Y}-0002`, `RCPT-${Y}-0001`]); // in change order
+    expectBackupMatches();
+  });
+
+  it('numbers follow the date: later bills move up by one, keep their printed number; the Backup matches (owner request, 27 Oct 2026)', () => {
+    const offline = (at: number) => ({ ...body([[1, 1, 45000]]), offline: true, createdAt: at, clientRef: randomUUID() });
+    for (const d of [5, 10, 15]) ok(save(offline(istMs(2026, 9, d, 13)))); // uploaded in date order: 0001, 0002, 0003
+    const revBefore = ok(call('pull_changes', { p_since: 0 })).rev;
+    expect(ok(save({ ...body([[1, 1, 45000]]), billedAt: istMs(2026, 9, 8, 19, 45) })).billNo).toBe(`RCPT-${Y}-0002`);
+    const late = offline(istMs(2026, 9, 9, 9, 15));
+    expect(ok(save(late)).billNo).toBe(`RCPT-${Y}-0003`); // an offline bill takes its place too
+    expect(ok(save(late)).billNo).toBe(`RCPT-${Y}-0003`); // a retry (lost reply) gets the same bill: nothing moves again
+    const view = billTab(g.main()).map((r) => [r.bill.billNo, r.bill.createdAt, r.bill.oldNo]).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    expect(view).toEqual([
+      [`RCPT-${Y}-0001`, istMs(2026, 9, 5, 13), undefined],
+      [`RCPT-${Y}-0002`, istMs(2026, 9, 8, 19, 45), undefined],
+      [`RCPT-${Y}-0003`, istMs(2026, 9, 9, 9, 15), undefined],
+      [`RCPT-${Y}-0004`, istMs(2026, 9, 10, 13), `RCPT-${Y}-0002`], // moved twice: still the number it was printed with
+      [`RCPT-${Y}-0005`, istMs(2026, 9, 15, 13), `RCPT-${Y}-0003`],
+    ]);
+    expect(counter(g.main())).toBe(5);
+    // The phones get the moved bills as changes, under their new numbers.
+    const changed = ok(call('pull_changes', { p_since: revBefore })).bills.map((x: { billNo: string }) => x.billNo).sort();
+    expect(changed).toEqual([`RCPT-${Y}-0002`, `RCPT-${Y}-0003`, `RCPT-${Y}-0004`, `RCPT-${Y}-0005`]);
+    expect(ok(save(body([[1, 1, 45000]]))).billNo).toBe(`RCPT-${Y}-0006`); // a normal bill: the next number
+    // Cancelling checks it is still the same bill (a phone may not have the new numbers yet).
+    refused(call('void_bill', { p_bill_no: `RCPT-${Y}-0004`, p_reason: 'Wrong one', p_created_at: istMs(2026, 9, 9, 9, 15) }), 'receipt numbers have changed');
+    expect(ok(call('void_bill', { p_bill_no: `RCPT-${Y}-0004`, p_reason: 'Right one', p_created_at: istMs(2026, 9, 10, 13) })).createdAt).toBe(istMs(2026, 9, 10, 13));
+    expect(g.exec('healthCheck')).toMatchObject({ ok: true });
+    expectBackupMatches();
+  });
+
+  it('a bill of last month uploaded late: numbers move across month tabs; the Backup matches, also after missing it', () => {
+    const offline = (at: number) => ({ ...body([[1, 1, 45000]]), offline: true, createdAt: at, clientRef: randomUUID() });
+    ok(save(offline(istMs(2026, 8, 30, 20)))); // 0001, August
+    ok(save(offline(istMs(2026, 9, 2, 10)))); // 0002, September
+    ok(save(body([[1, 1, 45000]]))); // 0003, now
+    g.rt.failFiles.add(g.backupId()); // the Backup misses this one
+    expect(ok(save(offline(istMs(2026, 8, 29, 18)))).billNo).toBe(`RCPT-${Y}-0001`);
+    g.rt.failFiles.clear();
+    expect(billTab(g.main(), '202608').map((r) => r.bill.billNo).sort()).toEqual([`RCPT-${Y}-0001`, `RCPT-${Y}-0002`]);
+    expect(billTab(g.main(), '202609').map((r) => [r.bill.billNo, r.bill.oldNo]).sort()).toEqual([[`RCPT-${Y}-0003`, `RCPT-${Y}-0002`], [`RCPT-${Y}-0004`, `RCPT-${Y}-0003`]]);
+    ok(call('update_dish', { p_id: 2, p_patch: { price_paise: 13000 } })); // the next change brings the Backup up to date
+    expect(ok(call('sheet_status'))).toMatchObject({ backupOk: true, backupBehind: 0 });
+    expect(g.exec('healthCheck')).toMatchObject({ ok: true });
     expectBackupMatches();
   });
 
