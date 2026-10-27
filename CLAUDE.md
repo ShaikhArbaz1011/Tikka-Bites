@@ -87,7 +87,7 @@ Full spec: `plan.txt`. Architecture, data model, and phases: `PLAN.md`. Read bot
   - Phones follow moves bill by bill: `applyChanges` takes whatever was under a number out of the totals.
   - When numbers move across months, or after `renumber_year_by_date`, the server bumps `renumber_rev`. Phones and the Supabase backup sheet then copy everything again.
   - `void_bill` also gets the bill's `createdAt`, so a phone with old numbers can't cancel the wrong bill.
-  - `renumber_year_by_date('YYYY')` (SQL Editor only) gives a year's bills one series in date order, old monthly numbers included.
+  - `renumber_year_by_date('YYYY')` (SQL Editor only) gives a year's bills one series in date order, old monthly numbers included. It ran once on live on 27 Oct 2026 (2026: 23 bills → RCPT-2026-0001…0023).
 - Times show on a 12-hour clock with AM/PM everywhere (owner request, 27 Oct 2026).
   - Code: `formatTime12` / `formatDateTime`, Excel `hh:mm AM/PM`, and `timeText` in `Code.gs`.
   - The bill-date picker uses hour / minute / AM-PM selects, whatever the phone's own clock setting.
